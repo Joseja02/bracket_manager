@@ -9,22 +9,22 @@ use App\Http\Controllers\SetController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\DebugController;
 
-Route::get('/ping', fn () => response()->json(['ok' => true]));
+Route::get('/ping', fn() => response()->json(['ok' => true]));
 
 // Protected routes
 Route::middleware('auth:sanctum')->group(function () {
     // Usuario actual
     Route::get('/me', [MeController::class, 'me']);
     Route::get('/me/events', [MeController::class, 'events']);
-    
+
     // Auth
     Route::post('/auth/refresh', [AuthController::class, 'refresh']);
-    
+
     // Eventos
     Route::get('/events/{eventId}', [EventController::class, 'show']);
     Route::get('/events/{eventId}/admin-check', [EventController::class, 'adminCheck']);
     Route::get('/events/{eventId}/sets', [EventController::class, 'getSets']);
-    
+
     // Sets
     Route::get('/sets/{setId}', [SetController::class, 'show']);
     Route::post('/sets/{setId}/start', [SetController::class, 'start']);
@@ -34,7 +34,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/sets/{setId}/bans', [SetController::class, 'ban']);
     Route::get('/sets/{setId}/draft', [SetController::class, 'draft']);
     Route::post('/sets/{setId}/draft', [SetController::class, 'saveDraft']);
-    
+
     // Admin - Reportes
     Route::prefix('admin')->middleware('admin')->group(function () {
         Route::get('/reports', [ReportController::class, 'index']);
@@ -42,6 +42,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/reports/{reportId}', [ReportController::class, 'update']);
         Route::post('/reports/{reportId}/approve', [ReportController::class, 'approve']);
         Route::post('/reports/{reportId}/reject', [ReportController::class, 'reject']);
+
+        // Vista en Vivo para Admins
+        Route::get('/sets/{setId}/live', [SetController::class, 'adminLiveState']);
     });
 });
 

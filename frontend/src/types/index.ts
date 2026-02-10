@@ -29,6 +29,7 @@ export interface SetParticipant {
 export interface SetSummary {
   id: ID;
   eventId: ID;
+  eventName: string;
   round: string;
   bestOf: number;
   p1: SetParticipant;

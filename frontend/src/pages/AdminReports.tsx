@@ -5,15 +5,16 @@ import { AppLayout } from '@/components/layouts/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { adminApi } from '@/lib/api';
-import { FileCheck, AlertCircle, RefreshCw } from 'lucide-react';
+import { adminApi, competitorApi } from '@/lib/api';
+import { FileCheck, AlertCircle, RefreshCw, Wifi } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import type { ReportSummary, SetSummary } from '@/types';
 
 export default function AdminReports() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected' | 'active'>('pending');
   const [searchParams] = useSearchParams();
   const eventId = searchParams.get('eventId') || sessionStorage.getItem('admin_event_id') || '';
 
@@ -25,12 +26,19 @@ export default function AdminReports() {
 
   const { data: reports, isLoading } = useQuery({
     queryKey: ['adminReports', filter, eventId],
-    queryFn: () => adminApi.getReports({ status: filter, eventId }),
+    queryFn: async () => {
+      if (filter === 'active') {
+        // Reutilizando el endpoint de competidor para obtener sets en progreso
+        return competitorApi.getEventSets(eventId, { status: 'in_progress' });
+      }
+      return adminApi.getReports({ status: filter, eventId });
+    },
     enabled: !!eventId,
   });
 
   const filters = [
     { value: 'pending' as const, label: 'Pendientes' },
+    { value: 'active' as const, label: 'En Curso' },
     { value: 'approved' as const, label: 'Aprobados' },
     { value: 'rejected' as const, label: 'Rechazados' },
   ];
@@ -38,13 +46,13 @@ export default function AdminReports() {
   return (
     <AppLayout>
       <div className="space-y-5">
-        {/* Header */}
+        {/* Encabezado */}
         <div className="space-y-1">
           <h1 className="text-2xl font-display">Reportes</h1>
           <p className="text-sm text-muted-foreground">Revisa y aprueba reportes de sets</p>
         </div>
 
-        {/* Actions */}
+        {/* Acciones */}
         <Button
           variant="outline"
           size="sm"
@@ -55,7 +63,7 @@ export default function AdminReports() {
           Actualizar
         </Button>
 
-        {/* Filter Tabs */}
+        {/* Pestañas de Filtro */}
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-gaming">
           {filters.map((f) => (
             <button
@@ -73,7 +81,7 @@ export default function AdminReports() {
           ))}
         </div>
 
-        {/* Reports List */}
+        {/* Lista de Reportes */}
         {!eventId ? (
           <Card className="border-dashed">
             <CardContent className="flex flex-col items-center justify-center py-10">
@@ -97,59 +105,85 @@ export default function AdminReports() {
                 <AlertCircle className="w-10 h-10 text-muted-foreground mb-3" />
               )}
               <p className="text-muted-foreground text-center">
-                No hay reportes {filter === 'pending' ? 'pendientes' : filter === 'approved' ? 'aprobados' : 'rechazados'}
+                No hay reportes {filter === 'pending' ? 'pendientes' : filter === 'active' ? 'en curso' : filter === 'approved' ? 'aprobados' : 'rechazados'}
               </p>
             </CardContent>
           </Card>
         ) : (
           <div className="space-y-3">
-            {reports.map((report) => (
-              <Card key={report.id} className="overflow-hidden">
-                <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <CardTitle className="text-base truncate">{report.round}</CardTitle>
-                      <CardDescription className="truncate">{report.eventName}</CardDescription>
-                    </div>
-                    <Badge variant="outline" className="shrink-0">
-                      {report.scoreP1} - {report.scoreP2}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="text-sm">
-                    <p className="text-muted-foreground text-xs">Jugadores</p>
-                    <p className="font-medium truncate">{report.p1.name} vs {report.p2.name}</p>
-                  </div>
+            {reports.map((item: any) => {
+              // Manejar tanto ReportSummary como SetSummary (para sets activos)
+              const isSet = filter === 'active';
+              const id = isSet ? item.id : item.id;
+              const title = isSet ? item.round : item.round;
+              const eventName = item.eventName || 'Evento';
+              const p1Name = isSet ? item.p1?.name : item.p1?.name;
+              const p2Name = isSet ? item.p2?.name : item.p2?.name;
+              const scoreText = isSet ? 'En Progreso' : `${item.scoreP1} - ${item.scoreP2}`;
 
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <p className="text-muted-foreground">Enviado por</p>
-                      <p className="font-medium truncate">{report.submittedBy}</p>
+              return (
+                <Card key={id} className="overflow-hidden">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <CardTitle className="text-base truncate">{title}</CardTitle>
+                          {isSet && (
+                            <Badge variant="outline" className="text-green-600 border-green-500 gap-1 h-5 px-1.5">
+                              <Wifi className="w-3 h-3 animate-pulse" /> Live
+                            </Badge>
+                          )}
+                        </div>
+                        <CardDescription className="truncate">{eventName}</CardDescription>
+                      </div>
+                      <Badge variant={isSet ? 'secondary' : 'outline'} className="shrink-0">
+                        {scoreText}
+                      </Badge>
                     </div>
-                    <div className="text-right">
-                      <p className="text-muted-foreground">Fecha</p>
-                      <p className="font-medium">
-                        {new Date(report.createdAt).toLocaleDateString('es-ES', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </p>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="text-sm">
+                      <p className="text-muted-foreground text-xs">Jugadores</p>
+                      <p className="font-medium truncate">{p1Name} vs {p2Name}</p>
                     </div>
-                  </div>
 
-                  <Button
-                    onClick={() => navigate(`/admin/reports/${report.id}${eventId ? `?eventId=${eventId}` : ''}`)}
-                    className={cn('w-full', filter === 'pending' ? '' : 'bg-muted text-foreground hover:bg-muted/80')}
-                    variant={filter === 'pending' ? 'default' : 'outline'}
-                  >
-                    {filter === 'pending' ? 'Revisar' : 'Ver Detalle'}
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
+                    {!isSet && (
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <p className="text-muted-foreground">Enviado por</p>
+                          <p className="font-medium truncate">{item.submittedBy}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-muted-foreground">Fecha</p>
+                          <p className="font-medium">
+                            {new Date(item.createdAt).toLocaleDateString('es-ES', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    <Button
+                      onClick={() => {
+                        if (isSet) {
+                          navigate(`/admin/sets/${id}/live`);
+                        } else {
+                          navigate(`/admin/reports/${id}${eventId ? `?eventId=${eventId}` : ''}`);
+                        }
+                      }}
+                      className={cn('w-full', filter === 'pending' ? '' : 'bg-muted text-foreground hover:bg-muted/80')}
+                      variant={filter === 'pending' ? 'default' : 'outline'}
+                    >
+                      {isSet ? 'Ver Live' : filter === 'pending' ? 'Revisar' : 'Ver Detalle'}
+                    </Button>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>

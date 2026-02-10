@@ -56,7 +56,7 @@ export const competitorApi = {
     api.post(`/sets/${setId}/start`, bestOf ? { bestOf } : undefined).then(res => res.data),
   submitReport: (setId: string | number, data: { games: GameRecord[]; notes?: string }) =>
     api.post(`/sets/${setId}/submit`, data).then(res => res.data),
-  // Real-time helpers for RPS and bans
+  // Ayudantes de tiempo real para RPS y bans
   getSetState: (setId: string | number) => api.get(`/sets/${setId}/state`).then(res => res.data),
   postRpsChoice: (setId: string | number, choice: string) => api.post(`/sets/${setId}/rps`, { choice }).then(res => res.data),
   postBan: (setId: string | number, stage: string, allStages?: string[]) => api.post(`/sets/${setId}/bans`, { stage, allStages }).then(res => res.data),
@@ -76,6 +76,8 @@ export const adminApi = {
     api.post(`/admin/reports/${reportId}/approve`).then(res => res.data),
   rejectReport: (reportId: string | number, reason: string) =>
     api.post(`/admin/reports/${reportId}/reject`, { reason }).then(res => res.data),
+  getSetLiveState: (setId: string | number) =>
+    api.get<{ setDetail: SetDetail, state: any, draft: any, lastUpdate: string | null }>(`/admin/sets/${setId}/live`).then(res => res.data),
 };
 
 export default api;

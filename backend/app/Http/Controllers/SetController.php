@@ -652,5 +652,42 @@ class SetController extends Controller
 
         return $errors;
     }
+    /**
+     * Obtener estado en vivo del set para admin (incluyendo borradores)
+     * GET /api/admin/sets/{setId}/live
+     */
+    public function adminLiveState(Request $request, $setId)
+    {
+        $user = Auth::user();
+
+        // 1. Obtener detalles básicos de start.gg
+        try {
+            $setDetail = $this->client->getSetDetail($user, $setId);
+        } catch (\Throwable $e) {
+            return response()->json(['error' => 'Failed to fetch set detail from start.gg', 'message' => $e->getMessage()], 500);
+        }
+
+        // 2. Obtener estado oficial (RPS/Bans/BestOf)
+        $state = SetState::where('set_id', $setId)->first();
+        if ($state?->best_of) {
+            $setDetail['bestOf'] = (int) $state->best_of;
+        }
+
+        // 3. Obtener el borrador más reciente (de CUALQUIER usuario para este set)
+        // Esto permite al admin ver lo último que se ha modificado
+        $latestDraft = SetDraft::where('set_id', $setId)
+            ->orderBy('updated_at', 'desc')
+            ->first();
+
+        // Estructurar respuesta combinada
+        $liveState = [
+            'setDetail' => $setDetail,
+            'state' => $state,
+            'draft' => $latestDraft ? $latestDraft->data : null,
+            'lastUpdate' => $latestDraft ? $latestDraft->updated_at->toIso8601String() : null,
+        ];
+
+        return response()->json($liveState);
+    }
 }
 
