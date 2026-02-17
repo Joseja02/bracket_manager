@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -8,8 +8,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { GameRecord, StageName, STAGES } from '@/types';
-import { ArrowLeft, ArrowRight, Check, Trophy, MapPin, Ban } from 'lucide-react';
+import { ArrowLeft, Check, Trophy, MapPin, Ban } from 'lucide-react';
 import { CharacterSelect } from './CharacterSelect';
+import { slugToLabel } from '@/lib/characters';
 
 type WizardStep = 'stage' | 'winner' | 'charP1' | 'charP2' | 'stocks' | 'preview';
 
@@ -23,10 +24,6 @@ interface GameWizardModalProps {
   onSave: (game: GameRecord) => void;
   lockStage?: boolean;
   isGame1?: boolean;
-}
-
-function slugToLabel(slug: string) {
-  return slug.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 const assetBase = import.meta.env.BASE_URL.endsWith('/')
@@ -59,11 +56,25 @@ export function GameWizardModal({
   const [step, setStep] = useState<WizardStep>('stage');
   const [draft, setDraft] = useState<GameRecord>(game);
 
+  // Auto-advance refs
+  const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stepRef = useRef(step);
+  stepRef.current = step;
+
+  const clearAutoAdvance = () => {
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
+  };
+
   useEffect(() => {
     if (open) {
       setDraft(game);
       setStep(lockStage && game.stage ? 'winner' : 'stage');
+      clearAutoAdvance();
     }
+    return () => clearAutoAdvance();
   }, [open, game, lockStage]);
 
   const availableStages = useMemo(
@@ -93,6 +104,7 @@ export function GameWizardModal({
   })();
 
   const handleNext = () => {
+    clearAutoAdvance();
     if (step === 'preview') {
       onSave(draft);
       onClose();
@@ -105,10 +117,26 @@ export function GameWizardModal({
   };
 
   const handleBack = () => {
+    clearAutoAdvance();
     const prevIndex = currentStepIndex - 1;
     if (prevIndex >= 0) {
       setStep(steps[prevIndex]);
     }
+  };
+
+  /** Schedules auto-advance 0.6s after a selection */
+  const scheduleAutoAdvance = () => {
+    clearAutoAdvance();
+    autoAdvanceTimerRef.current = setTimeout(() => {
+      const currentStep = stepRef.current;
+      if (currentStep === 'preview') return;
+      const idx = steps.indexOf(currentStep);
+      const nextIdx = idx + 1;
+      if (nextIdx > 0 && nextIdx < steps.length) {
+        setStep(steps[nextIdx]);
+      }
+      autoAdvanceTimerRef.current = null;
+    }, 600);
   };
 
   const progressPercent = ((currentStepIndex + 1) / steps.length) * 100;
@@ -148,7 +176,12 @@ export function GameWizardModal({
                   return (
                     <button
                       key={stage}
-                      onClick={() => !isBanned && setDraft({ ...draft, stage })}
+                      onClick={() => {
+                        if (!isBanned) {
+                          setDraft({ ...draft, stage });
+                          scheduleAutoAdvance();
+                        }
+                      }}
                       disabled={isBanned}
                       className={cn(
                         'stage-card relative aspect-[3/4] p-2 flex flex-col justify-end overflow-hidden',
@@ -204,6 +237,7 @@ export function GameWizardModal({
                         if (p === 'p1') { updated.stocksP2 = 0; }
                         else { updated.stocksP1 = 0; }
                         setDraft(updated);
+                        scheduleAutoAdvance();
                       }}
                       className={cn(
                         'flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all duration-200',
@@ -239,7 +273,10 @@ export function GameWizardModal({
               </p>
               <CharacterSelect
                 value={draft.characterP1 || null}
-                onChange={(val) => setDraft({ ...draft, characterP1: val || '' })}
+                onChange={(val) => {
+                  setDraft({ ...draft, characterP1: val || '' });
+                  scheduleAutoAdvance();
+                }}
               />
             </div>
           )}
@@ -252,7 +289,10 @@ export function GameWizardModal({
               </p>
               <CharacterSelect
                 value={draft.characterP2 || null}
-                onChange={(val) => setDraft({ ...draft, characterP2: val || '' })}
+                onChange={(val) => {
+                  setDraft({ ...draft, characterP2: val || '' });
+                  scheduleAutoAdvance();
+                }}
               />
             </div>
           )}
@@ -276,6 +316,7 @@ export function GameWizardModal({
                         } else {
                           setDraft({ ...draft, stocksP1: 0, stocksP2: s });
                         }
+                        scheduleAutoAdvance();
                       }}
                       className={cn(
                         'px-4 py-3 rounded-lg border-2 text-sm font-medium transition-all',
@@ -383,27 +424,20 @@ export function GameWizardModal({
               ))}
             </div>
 
-            <Button
-              size="sm"
-              onClick={handleNext}
-              disabled={!canGoForward}
-              className={cn(
-                'gap-1',
-                step === 'preview' && 'bg-gradient-primary'
-              )}
-            >
-              {step === 'preview' ? (
-                <>
-                  <Check className="w-4 h-4" />
-                  Confirmar
-                </>
-              ) : (
-                <>
-                  Siguiente
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </Button>
+            {step === 'preview' ? (
+              <Button
+                size="sm"
+                onClick={handleNext}
+                disabled={!canGoForward}
+                className="gap-1 bg-gradient-primary"
+              >
+                <Check className="w-4 h-4" />
+                Confirmar
+              </Button>
+            ) : (
+              /* Spacer to balance layout when no explicit Next button */
+              <div className="w-[72px]" />
+            )}
           </div>
         </div>
       </DialogContent>

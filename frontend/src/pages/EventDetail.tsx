@@ -7,8 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { competitorApi } from '@/lib/api';
-import { ArrowLeft, Swords, Eye, Play, RefreshCw, Loader2, ChevronRight } from 'lucide-react';
+import { competitorApi, adminApi } from '@/lib/api';
+import { ArrowLeft, Swords, Eye, Play, RefreshCw, Loader2, ChevronRight, RotateCcw } from 'lucide-react';
 import type { SetSummary } from '@/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/hooks/useAuth';
@@ -77,14 +77,40 @@ export default function EventDetail() {
       }
       setPendingStartSetId(null);
     },
-    onError: (error: any) => {
-      const message = error?.response?.data?.message || error?.response?.data?.error || 'No se pudo iniciar el set';
+    onError: (error: unknown) => {
+      const axErr = error as { response?: { data?: { message?: string; error?: string } } };
+      const message = axErr?.response?.data?.message || axErr?.response?.data?.error || 'No se pudo iniciar el set';
       toast({
         title: 'Error al iniciar set',
         description: message,
         variant: 'destructive',
       });
       setPendingStartSetId(null);
+    },
+  });
+
+  const resetSetMutation = useMutation({
+    mutationFn: (setId: string | number) => adminApi.resetSet(setId),
+    onSuccess: () => {
+      toast({
+        title: 'Set reiniciado',
+        description: 'El set ha sido reiniciado. Se han borrado los reportes y borradores.',
+      });
+      if (eventId) {
+        queryClient.fetchQuery({
+          queryKey: ['eventSets', eventId],
+          queryFn: () => competitorApi.getEventSets(eventId, { fresh: 1 }),
+        });
+      }
+    },
+    onError: (error: unknown) => {
+      const axErr = error as { response?: { data?: { message?: string; error?: string } } };
+      const message = axErr?.response?.data?.message || axErr?.response?.data?.error || 'No se pudo reiniciar el set';
+      toast({
+        title: 'Error al reiniciar set',
+        description: message,
+        variant: 'destructive',
+      });
     },
   });
 
@@ -258,12 +284,29 @@ export default function EventDetail() {
                           </button>
                         )}
                         {set.status === 'in_progress' && !canEditRejected && (
-                          <button
-                            onClick={() => navigate(`/sets/${set.id}`)}
-                            className="w-full py-2.5 px-4 rounded-lg border border-border text-sm font-medium flex items-center justify-center gap-2 hover:border-primary/50 transition-all active:scale-[0.98]"
-                          >
-                            Ver Set <ChevronRight className="w-4 h-4" />
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => navigate(`/sets/${set.id}`)}
+                              className="flex-1 py-2.5 px-4 rounded-lg border border-border text-sm font-medium flex items-center justify-center gap-2 hover:border-primary/50 transition-all active:scale-[0.98]"
+                            >
+                              Ver Set <ChevronRight className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (confirm('¿Reiniciar este set? Se borrarán reportes y borradores.')) {
+                                  resetSetMutation.mutate(set.id);
+                                }
+                              }}
+                              disabled={resetSetMutation.isPending}
+                              className="py-2.5 px-3 rounded-lg border border-destructive/30 text-destructive text-sm font-medium flex items-center justify-center gap-1.5 hover:bg-destructive/10 transition-all active:scale-[0.98] disabled:opacity-50"
+                            >
+                              {resetSetMutation.isPending ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <RotateCcw className="w-4 h-4" />
+                              )}
+                            </button>
+                          </div>
                         )}
                         {canEditRejected && userOwnsSet && (
                           <button

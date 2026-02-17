@@ -689,5 +689,54 @@ class SetController extends Controller
 
         return response()->json($liveState);
     }
+
+    /**
+     * Reiniciar un set: borrar reportes, borradores y estado interno.
+     * POST /api/admin/sets/{setId}/reset
+     */
+    public function resetSet(Request $request, $setId)
+    {
+        $user = Auth::user();
+
+        try {
+            DB::beginTransaction();
+
+            // Borrar reportes (cascade borra games asociados)
+            Report::where('set_id', $setId)->delete();
+
+            // Borrar borradores
+            SetDraft::where('set_id', $setId)->delete();
+
+            // Resetear estado del set (RPS/bans/best_of)
+            SetState::where('set_id', $setId)->delete();
+
+            DB::commit();
+
+            // Invalidar caches
+            Cache::forget("set_detail_{$setId}");
+
+            Log::info('Set reset by admin', [
+                'set_id' => $setId,
+                'admin_id' => $user->id,
+            ]);
+
+            return response()->json([
+                'message' => 'Set reiniciado correctamente',
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            Log::error('Error resetting set', [
+                'set_id' => $setId,
+                'admin_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'error' => 'Failed to reset set',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
 }
 

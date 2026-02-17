@@ -45,6 +45,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Vista en Vivo para Admins
         Route::get('/sets/{setId}/live', [SetController::class, 'adminLiveState']);
+        // Reiniciar set (borrar reportes, borradores, estado)
+        Route::post('/sets/{setId}/reset', [SetController::class, 'resetSet']);
     });
 });
 

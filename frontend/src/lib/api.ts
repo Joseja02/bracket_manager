@@ -78,6 +78,8 @@ export const adminApi = {
     api.post(`/admin/reports/${reportId}/reject`, { reason }).then(res => res.data),
   getSetLiveState: (setId: string | number) =>
     api.get<{ setDetail: SetDetail, state: any, draft: any, lastUpdate: string | null }>(`/admin/sets/${setId}/live`).then(res => res.data),
+  resetSet: (setId: string | number) =>
+    api.post(`/admin/sets/${setId}/reset`).then(res => res.data),
 };
 
 export default api;
