@@ -20,3 +20,8 @@ backend/public/build/
 .idea/
 .DS_Store
 Thumbs.db
+deploy.sh*
+set-stage/
+Caddyfile
+deploy-dev.sh
+docker-compose.yml

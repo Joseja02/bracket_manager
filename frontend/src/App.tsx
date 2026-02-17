@@ -10,7 +10,7 @@ import Login from "./pages/Login";
 import AuthCallback from "./pages/AuthCallback";
 import Dashboard from "./pages/Dashboard";
 import EventDetail from "./pages/EventDetail";
-import SetDetail from "./pages/SetDetail";
+import SetPage from "./pages/SetPage";
 import AdminReports from "./pages/AdminReports";
 import AdminReportDetail from "./pages/AdminReportDetail";
 import AdminLiveSet from "./pages/AdminLiveSet";
@@ -54,7 +54,7 @@ const AppRoutes = () => (
           path="/sets/:setId"
           element={
             <ProtectedRoute>
-              <SetDetail />
+              <SetPage />
             </ProtectedRoute>
           }
         />

@@ -26,10 +26,10 @@ export function ScopeErrorModal({ open, onClose, message }: ScopeErrorModalProps
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent>
+      <DialogContent className="gaming-card border-border/30 max-w-sm mx-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-destructive" />
+          <DialogTitle className="flex items-center gap-2 font-display uppercase tracking-wider">
+            <AlertTriangle className="h-5 w-5 text-amber" />
             Permisos Insuficientes
           </DialogTitle>
           <DialogDescription>
@@ -37,16 +37,16 @@ export function ScopeErrorModal({ open, onClose, message }: ScopeErrorModalProps
           </DialogDescription>
         </DialogHeader>
         
-        <div className="bg-muted/50 rounded-lg p-4 text-sm">
-          <p className="font-medium mb-2">¿Qué significa esto?</p>
-          <p className="text-muted-foreground">
+        <div className="bg-gradient-surface rounded-lg p-4 text-sm border border-border/20">
+          <p className="font-semibold mb-2 text-foreground">¿Qué significa esto?</p>
+          <p className="text-muted-foreground leading-relaxed">
             Para iniciar o reportar sets en start.gg, necesitas autorizar a la aplicación con permisos adicionales. 
             Al re-autenticarte, se te pedirán los permisos necesarios.
           </p>
         </div>
 
         <DialogFooter className="flex-col sm:flex-row gap-2">
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onClose} className="border-border/50">
             Cancelar
           </Button>
           <Button onClick={handleReauth} className="bg-gradient-primary">

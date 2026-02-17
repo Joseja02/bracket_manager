@@ -148,18 +148,20 @@ export function CharacterSelect({
           setTimeout(() => setFocused(false), 150);
         }}
         disabled={disabled}
+        className="bg-gradient-surface border-border/30 focus:border-primary/50"
       />
 
       {focused && options.length > 0 && !disabled && (
-        <div className="absolute z-50 mt-2 w-full max-h-96 overflow-auto rounded-md border bg-inherit py-2 shadow-lg">
+        <div className="absolute z-[100] mt-2 w-full max-h-72 overflow-auto rounded-lg border border-border/30 bg-[hsl(var(--card))] py-1 shadow-xl shadow-black/40 scrollbar-gaming">
           {options.map((slug) => (
             <button
               key={slug}
               type="button"
               aria-label={slugToLabel(slug)}
               className={cn(
-                'flex items-center gap-3 w-full px-4 py-3 text-left hover:bg-muted-foreground/5',
-                value === slug && 'bg-muted-foreground/5'
+                'flex items-center gap-3 w-full px-3 py-2.5 text-left transition-colors',
+                'hover:bg-primary/10',
+                value === slug && 'bg-primary/15 border-l-2 border-primary'
               )}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
@@ -168,9 +170,9 @@ export function CharacterSelect({
                 setFocused(false);
               }}
             >
-              <img src={`${import.meta.env.BASE_URL}stock_icons/${slug}.png`} alt={slug} className="h-10 w-10 object-contain" />
-              <span className="flex-1 text-base text-current truncate">{slugToLabel(slug)}</span>
-              {value === slug && <Check className="h-5 w-5 text-success" />}
+              <img src={`${import.meta.env.BASE_URL}stock_icons/${slug}.png`} alt={slug} className="h-8 w-8 object-contain" />
+              <span className="flex-1 text-sm text-current truncate">{slugToLabel(slug)}</span>
+              {value === slug && <Check className="h-4 w-4 text-primary" />}
             </button>
           ))}
         </div>

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import CharacterSelect from './CharacterSelect';
@@ -51,21 +51,20 @@ export function GameRow({ game, p1Name, p2Name, onChange, readonly = false, lock
     game.stocksP2 === null ? 'unknown' : (game.stocksP2?.toString() || '');
 
   return (
-    <Card className={isComplete ? 'border-success/50' : ''}>
-      <CardContent className="pt-4 space-y-4 mobile:py-4 sm:pt-6">
+    <div className={cn('gaming-card p-4 space-y-4', isComplete && 'border-primary/30')}>
         <div className="flex items-center justify-between">
-          <h4 className="font-semibold flex items-center gap-2">
-            <Trophy className="h-4 w-4 text-primary" />
+          <h4 className="font-display text-sm uppercase tracking-wider flex items-center gap-2">
+            <Trophy className="h-4 w-4 text-amber" />
             Game {game.index}
           </h4>
-          {isComplete && <Badge className="bg-gradient-success">Completo</Badge>}
+          {isComplete && <Badge className="bg-primary/20 text-primary border-primary/30 text-xs">Completo</Badge>}
         </div>
 
         {/* Stage display (locked when lockStage) */}
         <div className="space-y-2">
           <Label>Stage</Label>
           {lockStage ? (
-            <div className="rounded-md border px-3 py-2 bg-muted/50 text-sm">
+            <div className="rounded-lg border border-border/30 px-3 py-2 bg-gradient-surface text-sm">
               {game.stage || 'Selecciona escenario desde la sección de bans'}
             </div>
           ) : (
@@ -154,19 +153,19 @@ export function GameRow({ game, p1Name, p2Name, onChange, readonly = false, lock
               <img src={`${import.meta.env.BASE_URL}stock_icons/${game.characterP1}.png`} alt={game.characterP1} className="h-10 w-10 object-contain" />
                 <span className="truncate text-base">{game.characterP1.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}</span>
                 {!readonly && (
-                  <button className="ml-auto rounded px-3 py-2 border text-sm sm:text-base" onClick={() => setP1ModalOpen(true)}>
+                  <button className="ml-auto rounded-lg px-3 py-2 border border-border/30 text-sm hover:border-primary/50 transition-colors" onClick={() => setP1ModalOpen(true)}>
                     Cambiar
                   </button>
                 )}
               </div>
             ) : (
-              <button className="w-full sm:w-auto rounded-md border px-3 py-3 text-center text-base" onClick={() => setP1ModalOpen(true)} disabled={readonly}>
+              <button className="w-full sm:w-auto rounded-lg border border-border/30 px-3 py-3 text-center text-sm hover:border-primary/50 transition-colors" onClick={() => setP1ModalOpen(true)} disabled={readonly}>
                 Añadir personaje
               </button>
             )}
 
             <AlertDialog open={p1ModalOpen} onOpenChange={setP1ModalOpen}>
-              <AlertDialogContent className="sm:max-w-md w-full h-full sm:h-auto sm:rounded-lg">
+              <AlertDialogContent className="gaming-card border-border/30 sm:max-w-md w-full h-full sm:h-auto sm:rounded-xl">
                 <AlertDialogHeader>
                   <AlertDialogTitle>Selecciona personaje - {p1Name}</AlertDialogTitle>
                 </AlertDialogHeader>
@@ -196,19 +195,19 @@ export function GameRow({ game, p1Name, p2Name, onChange, readonly = false, lock
               <img src={`${import.meta.env.BASE_URL}stock_icons/${game.characterP2}.png`} alt={game.characterP2} className="h-10 w-10 object-contain" />
                 <span className="truncate text-base">{game.characterP2.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}</span>
                 {!readonly && (
-                  <button className="ml-auto rounded px-3 py-2 border text-sm sm:text-base" onClick={() => setP2ModalOpen(true)}>
+                  <button className="ml-auto rounded-lg px-3 py-2 border border-border/30 text-sm hover:border-secondary/50 transition-colors" onClick={() => setP2ModalOpen(true)}>
                     Cambiar
                   </button>
                 )}
               </div>
             ) : (
-              <button className="w-full sm:w-auto rounded-md border px-3 py-3 text-center text-base" onClick={() => setP2ModalOpen(true)} disabled={readonly}>
+              <button className="w-full sm:w-auto rounded-lg border border-border/30 px-3 py-3 text-center text-sm hover:border-secondary/50 transition-colors" onClick={() => setP2ModalOpen(true)} disabled={readonly}>
                 Añadir personaje
               </button>
             )}
 
             <AlertDialog open={p2ModalOpen} onOpenChange={setP2ModalOpen}>
-              <AlertDialogContent className="sm:max-w-md w-full h-full sm:h-auto sm:rounded-lg">
+              <AlertDialogContent className="gaming-card border-border/30 sm:max-w-md w-full h-full sm:h-auto sm:rounded-xl">
                 <AlertDialogHeader>
                   <AlertDialogTitle>Selecciona personaje - {p2Name}</AlertDialogTitle>
                 </AlertDialogHeader>
@@ -231,7 +230,6 @@ export function GameRow({ game, p1Name, p2Name, onChange, readonly = false, lock
             </AlertDialog>
           </div>
         </div>
-      </CardContent>
-    </Card>
+    </div>
   );
 }

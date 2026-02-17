@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Menu, LogOut, Trophy, Settings, Moon, Sun } from 'lucide-react';
+import { Menu, LogOut, Swords, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -11,7 +11,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/hooks/useAuth';
-import { useTheme } from '@/hooks/useTheme';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -19,32 +18,29 @@ interface AppLayoutProps {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const { user, logout } = useAuth();
-  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-50 w-full border-b bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-        <div className="container flex h-16 items-center justify-between">
-          <Link to="/dashboard" className="flex items-center gap-2 font-bold text-xl">
-            <Trophy className="h-6 w-6 text-primary" />
-            <span className="bg-gradient-primary bg-clip-text text-transparent">
-              Start.gg Manager
+      <header className="sticky top-0 z-50 w-full border-b border-border/50 bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+        <div className="container flex h-14 items-center justify-between">
+          <Link to="/dashboard" className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-gradient-primary flex items-center justify-center">
+              <Swords className="w-4 h-4 text-white" />
+            </div>
+            <span className="font-display text-sm font-bold tracking-wider text-gradient hidden sm:inline">
+              BRACKET MANAGER
             </span>
           </Link>
 
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={toggleTheme}>
-              {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-            </Button>
-
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon">
+                <Button variant="ghost" size="icon" className="relative">
                   <Menu className="h-5 w-5" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuContent align="end" className="w-56 bg-card border-border">
                 <DropdownMenuLabel>
                   <div className="flex flex-col gap-1">
                     <span className="font-semibold">{user?.gamerTag}</span>
@@ -53,7 +49,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => navigate('/dashboard')}>
-                  <Trophy className="mr-2 h-4 w-4" />
+                  <Swords className="mr-2 h-4 w-4" />
                   Dashboard
                 </DropdownMenuItem>
                 {user?.role === 'admin' && (
@@ -68,9 +64,9 @@ export function AppLayout({ children }: AppLayoutProps) {
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={logout}>
+                <DropdownMenuItem onClick={logout} className="text-destructive">
                   <LogOut className="mr-2 h-4 w-4" />
-                  Logout
+                  Cerrar Sesión
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -78,7 +74,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         </div>
       </header>
 
-      <main className="container py-6">{children}</main>
+      <main className="container py-6 max-w-2xl mx-auto">{children}</main>
     </div>
   );
 }

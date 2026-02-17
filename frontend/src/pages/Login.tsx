@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Trophy } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Swords, Loader2 } from 'lucide-react';
 import { AuthLayout } from '@/components/layouts/AuthLayout';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
@@ -34,7 +32,6 @@ export default function Login() {
   }, [isAuthenticated, navigate]);
 
   const handleLogin = () => {
-    // OAuth real: redirigir al backend
     setIsAuthenticating(true);
     toast({
       title: 'Iniciando sesión...',
@@ -46,67 +43,45 @@ export default function Login() {
     window.location.href = normalized ? `${normalized}/auth/login` : '/auth/login';
   };
 
-  const handleAdminLogin = () => {
-    sessionStorage.setItem('auth_token', 'mock_admin_token_' + Date.now());
-    sessionStorage.setItem('mock_admin', 'true');
-    setIsAuthenticating(true);
-    toast({
-      title: 'Iniciando sesión como Admin...',
-      description: 'Redirigiendo a start.gg',
-    });
-    
-    setTimeout(() => {
-      window.location.href = '/dashboard?token=mock_admin_token';
-    }, 1000);
-  };
-
   return (
     <AuthLayout>
-      <Card className="border-2">
-        <CardHeader className="text-center">
-          <div className="flex justify-center mb-4">
-            <div className="rounded-full bg-gradient-primary p-4">
-              <Trophy className="h-12 w-12 text-white" />
-            </div>
+      <div className="gaming-card p-8 text-center animate-slide-up">
+        {/* Logo / Icon */}
+        <div className="flex justify-center mb-6">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-primary flex items-center justify-center glow-cyan">
+            <Swords className="w-10 h-10 text-white" />
           </div>
-          <CardTitle className="text-2xl">Start.gg Bracket Manager</CardTitle>
-          <CardDescription>
-            Gestiona tus brackets de Smash Ultimate con facilidad
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Button
-            onClick={handleLogin}
-            disabled={isAuthenticating}
-            className="w-full bg-gradient-primary hover:opacity-90"
-            size="lg"
-          >
-            {isAuthenticating ? 'Autenticando...' : 'Iniciar sesión con start.gg'}
-          </Button>
+        </div>
 
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-2 text-muted-foreground">Demo Mode</span>
-            </div>
-          </div>
+        {/* Title */}
+        <h1 className="font-display text-3xl font-bold tracking-wider text-gradient mb-2">
+          BRACKET MANAGER
+        </h1>
+        <p className="text-muted-foreground text-sm mb-8">
+          Gestiona tus brackets de Smash Ultimate
+        </p>
 
-          <Button
-            onClick={handleAdminLogin}
-            disabled={isAuthenticating}
-            variant="outline"
-            className="w-full"
-          >
-            Login como Admin (Demo)
-          </Button>
+        {/* Login Button */}
+        <button
+          onClick={handleLogin}
+          disabled={isAuthenticating}
+          className="w-full py-4 px-6 rounded-xl bg-gradient-primary text-white font-display text-lg font-bold tracking-wider transition-all duration-300 hover:opacity-90 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed glow-cyan flex items-center justify-center gap-3"
+        >
+          {isAuthenticating ? (
+            <>
+              <Loader2 className="w-5 h-5 animate-spin" />
+              AUTENTICANDO...
+            </>
+          ) : (
+            'INICIAR SESIÓN CON START.GG'
+          )}
+        </button>
 
-          <p className="text-xs text-center text-muted-foreground">
-            Conecta tu cuenta de start.gg para acceder a tus eventos y sets
-          </p>
-        </CardContent>
-      </Card>
+        {/* Footer text */}
+        <p className="text-xs text-muted-foreground mt-6">
+          Conecta tu cuenta de start.gg para acceder a tus eventos y sets
+        </p>
+      </div>
     </AuthLayout>
   );
 }
