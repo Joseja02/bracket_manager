@@ -13,6 +13,7 @@ import EventDetail from "./pages/EventDetail";
 import SetDetail from "./pages/SetDetail";
 import AdminReports from "./pages/AdminReports";
 import AdminReportDetail from "./pages/AdminReportDetail";
+import AdminLiveSet from "./pages/AdminLiveSet";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -70,6 +71,14 @@ const AppRoutes = () => (
           element={
             <ProtectedRoute requireAdmin>
               <AdminReportDetail />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/sets/:setId/live"
+          element={
+            <ProtectedRoute requireAdmin>
+              <AdminLiveSet />
             </ProtectedRoute>
           }
         />
