@@ -19,41 +19,41 @@ interface BestOfDialogProps {
 export function BestOfDialog({ open, onClose, onConfirm, isSubmitting = false }: BestOfDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent>
+      <DialogContent className="gaming-card border-border/30 max-w-xs mx-auto">
         <DialogHeader>
-          <DialogTitle>¿Formato del set?</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="font-display text-lg uppercase tracking-wider text-center">¿Formato del set?</DialogTitle>
+          <DialogDescription className="text-center">
             Selecciona si el set será Bo3 o Bo5 antes de iniciarlo.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Button
+        <div className="grid grid-cols-2 gap-3">
+          <button
             onClick={() => onConfirm(3)}
             disabled={isSubmitting}
-            className="bg-gradient-primary sm:w-auto w-full sm:aspect-auto aspect-square sm:min-h-[auto] min-h-[60px] sm:px-4 px-0 sm:rounded-md rounded-lg"
+            className="gaming-card flex items-center justify-center aspect-square min-h-[80px] text-2xl font-display uppercase tracking-wider hover:border-primary/60 hover:shadow-[0_0_15px_rgba(0,212,255,0.15)] transition-all disabled:opacity-50"
           >
             {isSubmitting ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-6 h-6 animate-spin" />
             ) : (
               'Bo3'
             )}
-          </Button>
-          <Button
+          </button>
+          <button
             onClick={() => onConfirm(5)}
             disabled={isSubmitting}
-            className="bg-gradient-primary sm:w-auto w-full sm:aspect-auto aspect-square sm:min-h-[auto] min-h-[60px] sm:px-4 px-0 sm:rounded-md rounded-lg"
+            className="gaming-card flex items-center justify-center aspect-square min-h-[80px] text-2xl font-display uppercase tracking-wider hover:border-secondary/60 hover:shadow-[0_0_15px_rgba(153,69,255,0.15)] transition-all disabled:opacity-50"
           >
             {isSubmitting ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-6 h-6 animate-spin" />
             ) : (
               'Bo5'
             )}
-          </Button>
+          </button>
         </div>
 
         <DialogFooter className="pt-2">
-          <Button variant="outline" onClick={onClose} disabled={isSubmitting}>
+          <Button variant="outline" onClick={onClose} disabled={isSubmitting} className="w-full border-border/50">
             Cancelar
           </Button>
         </DialogFooter>

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { User, EventSummary, SetSummary, SetDetail, ReportSummary, ReportDetail, GameRecord } from '@/types';
+import type { User, EventSummary, SetSummary, SetDetail, ReportSummary, ReportDetail, GameRecord, SetSpectateResponse } from '@/types';
 
 const baseURL = import.meta.env.VITE_API_BASE_URL;
 const normalizedBaseUrl =
@@ -62,6 +62,8 @@ export const competitorApi = {
   postBan: (setId: string | number, stage: string, allStages?: string[]) => api.post(`/sets/${setId}/bans`, { stage, allStages }).then(res => res.data),
   getSetDraft: (setId: string | number) => api.get(`/sets/${setId}/draft`).then(res => res.data),
   postSetDraft: (setId: string | number, data: unknown) => api.post(`/sets/${setId}/draft`, { data }).then(res => res.data),
+  getSetSpectate: (setId: string | number) =>
+    api.get<SetSpectateResponse>(`/sets/${setId}/spectate`).then(res => res.data),
 };
 
 // Admin
@@ -78,6 +80,12 @@ export const adminApi = {
     api.post(`/admin/reports/${reportId}/reject`, { reason }).then(res => res.data),
   getSetLiveState: (setId: string | number) =>
     api.get<{ setDetail: SetDetail, state: any, draft: any, lastUpdate: string | null }>(`/admin/sets/${setId}/live`).then(res => res.data),
+  resetSet: (setId: string | number) =>
+    api.post<{ message: string; startggReset?: boolean; startggError?: string | null }>(
+      `/admin/sets/${setId}/reset`,
+    ).then(res => res.data),
+  setBestOf: (setId: string | number, bestOf: 3 | 5) =>
+    api.post<{ message: string; bestOf: number }>(`/admin/sets/${setId}/best-of`, { bestOf }).then(res => res.data),
 };
 
 export default api;

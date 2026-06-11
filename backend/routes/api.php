@@ -34,6 +34,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/sets/{setId}/bans', [SetController::class, 'ban']);
     Route::get('/sets/{setId}/draft', [SetController::class, 'draft']);
     Route::post('/sets/{setId}/draft', [SetController::class, 'saveDraft']);
+    Route::get('/sets/{setId}/spectate', [SetController::class, 'spectate'])
+        ->middleware('throttle:120,1');
 
     // Admin - Reportes
     Route::prefix('admin')->middleware('admin')->group(function () {
@@ -45,6 +47,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Vista en Vivo para Admins
         Route::get('/sets/{setId}/live', [SetController::class, 'adminLiveState']);
+        // Reiniciar set (borrar reportes, borradores, estado + reset en start.gg)
+        Route::post('/sets/{setId}/reset', [SetController::class, 'resetSet']);
+        // Cambiar el Best Of de un set en progreso sin perder el progreso
+        Route::post('/sets/{setId}/best-of', [SetController::class, 'setBestOf']);
     });
 });
 

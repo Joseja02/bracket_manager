@@ -51,7 +51,7 @@ export function useSetData(setId: string | undefined) {
     onSuccess: () => {
       toast({
         title: '¡Reporte enviado!',
-        description: 'El set ha sido reportado para revisión',
+        description: 'El set ha sido reportado para revisión. Gracias maja',
       });
       queryClient.invalidateQueries({ queryKey: ['setDetail', setId] });
     },

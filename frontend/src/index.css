@@ -1,84 +1,105 @@
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
+/* Esports Gaming Design System */
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222 47% 11%;
+    --background: 220 20% 6%;
+    --foreground: 210 40% 98%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card: 220 20% 9%;
+    --card-foreground: 210 40% 98%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover: 220 20% 9%;
+    --popover-foreground: 210 40% 98%;
 
-    --primary: 271 81% 56%;
-    --primary-foreground: 0 0% 100%;
-    
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
+    --primary: 195 100% 50%;
+    --primary-foreground: 220 20% 6%;
 
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
+    --secondary: 280 70% 55%;
+    --secondary-foreground: 210 40% 98%;
 
-    --accent: 271 81% 56%;
-    --accent-foreground: 0 0% 100%;
+    --muted: 220 15% 15%;
+    --muted-foreground: 215 20% 55%;
 
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
-    
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 100%;
+    --accent: 35 100% 55%;
+    --accent-foreground: 220 20% 6%;
 
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 271 81% 56%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+
+    --success: 145 70% 45%;
+    --success-foreground: 210 40% 98%;
+
+    --border: 220 15% 18%;
+    --input: 220 15% 18%;
+    --ring: 195 100% 50%;
 
     --radius: 0.75rem;
-    
-    --gradient-primary: linear-gradient(135deg, hsl(271 81% 56%), hsl(262 83% 58%));
-    --gradient-success: linear-gradient(135deg, hsl(142 76% 36%), hsl(142 76% 46%));
+
+    /* Custom Gaming Colors */
+    --cyan: 195 100% 50%;
+    --cyan-glow: 195 100% 60%;
+    --magenta: 280 70% 55%;
+    --magenta-glow: 280 80% 65%;
+    --amber: 35 100% 55%;
+    --amber-glow: 35 100% 65%;
+    --success-glow: 145 80% 55%;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(var(--cyan)) 0%, hsl(var(--magenta)) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(var(--amber)) 0%, hsl(var(--destructive)) 100%);
+    --gradient-success: linear-gradient(135deg, hsl(var(--success)) 0%, hsl(var(--cyan)) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(220 20% 12%) 0%, hsl(220 20% 8%) 100%);
+    --gradient-surface: linear-gradient(135deg, hsl(220 20% 10%) 0%, hsl(220 20% 7%) 100%);
+
+    /* Shadows */
+    --shadow-glow-cyan: 0 0 30px hsl(var(--cyan) / 0.3);
+    --shadow-glow-magenta: 0 0 30px hsl(var(--magenta) / 0.3);
+    --shadow-glow-amber: 0 0 30px hsl(var(--amber) / 0.3);
+
+    --sidebar-background: 220 20% 8%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 195 100% 50%;
+    --sidebar-primary-foreground: 220 20% 6%;
+    --sidebar-accent: 220 15% 15%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 220 15% 18%;
+    --sidebar-ring: 195 100% 50%;
   }
 
   .dark {
-    --background: 224 71% 4%;
+    --background: 220 20% 6%;
     --foreground: 210 40% 98%;
-
-    --card: 224 71% 6%;
+    --card: 220 20% 9%;
     --card-foreground: 210 40% 98%;
-
-    --popover: 224 71% 6%;
+    --popover: 220 20% 9%;
     --popover-foreground: 210 40% 98%;
-
-    --primary: 271 81% 56%;
-    --primary-foreground: 0 0% 100%;
-
-    --secondary: 217 33% 17%;
+    --primary: 195 100% 50%;
+    --primary-foreground: 220 20% 6%;
+    --secondary: 280 70% 55%;
     --secondary-foreground: 210 40% 98%;
-
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
-
-    --accent: 271 81% 56%;
-    --accent-foreground: 0 0% 100%;
-
-    --destructive: 0 63% 31%;
-    --destructive-foreground: 0 0% 100%;
-    
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 100%;
-
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 271 81% 56%;
-    
-    --gradient-primary: linear-gradient(135deg, hsl(271 81% 56%), hsl(262 83% 58%));
-    --gradient-success: linear-gradient(135deg, hsl(142 76% 36%), hsl(142 76% 46%));
+    --muted: 220 15% 15%;
+    --muted-foreground: 215 20% 55%;
+    --accent: 35 100% 55%;
+    --accent-foreground: 220 20% 6%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 220 15% 18%;
+    --input: 220 15% 18%;
+    --ring: 195 100% 50%;
+    --sidebar-background: 220 20% 8%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 195 100% 50%;
+    --sidebar-primary-foreground: 220 20% 6%;
+    --sidebar-accent: 220 15% 15%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 220 15% 18%;
+    --sidebar-ring: 195 100% 50%;
   }
 }
 
@@ -88,6 +109,187 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Rajdhani', sans-serif;
+  }
+}
+
+@layer components {
+  /* Gaming Card Styles */
+  .gaming-card {
+    @apply relative overflow-hidden rounded-xl;
+    background: var(--gradient-card);
+    border: 1px solid hsl(var(--border));
+  }
+
+  .gaming-card::before {
+    content: '';
+    @apply absolute inset-0 opacity-0 transition-opacity duration-300 pointer-events-none;
+    background: linear-gradient(135deg, hsl(var(--cyan) / 0.1) 0%, transparent 50%);
+  }
+
+  .gaming-card:hover::before {
+    @apply opacity-100;
+  }
+
+  /* Glow Effects */
+  .glow-cyan {
+    box-shadow: var(--shadow-glow-cyan);
+  }
+
+  .glow-magenta {
+    box-shadow: var(--shadow-glow-magenta);
+  }
+
+  .glow-amber {
+    box-shadow: var(--shadow-glow-amber);
+  }
+
+  /* Stage Card Styles */
+  .stage-card {
+    @apply relative overflow-hidden rounded-lg transition-all duration-300 cursor-pointer;
+    background: var(--gradient-surface);
+    border: 2px solid transparent;
+  }
+
+  .stage-card:hover:not(.stage-banned):not(.stage-picked) {
+    border-color: hsl(var(--cyan) / 0.5);
+    transform: translateY(-2px);
+  }
+
+  .stage-card.stage-banned {
+    @apply opacity-40 grayscale cursor-not-allowed;
+    border-color: hsl(var(--destructive) / 0.5);
+  }
+
+  .stage-card.stage-picked {
+    border-color: hsl(var(--success));
+    box-shadow: 0 0 20px hsl(var(--success) / 0.4);
+  }
+
+  /* RPS Button Styles */
+  .rps-button {
+    @apply relative flex flex-col items-center justify-center p-6 rounded-xl transition-all duration-300;
+    background: var(--gradient-surface);
+    border: 2px solid hsl(var(--border));
+  }
+
+  .rps-button:hover {
+    border-color: hsl(var(--cyan));
+    transform: scale(1.05);
+    box-shadow: var(--shadow-glow-cyan);
+  }
+
+  .rps-button:active {
+    transform: scale(0.98);
+  }
+
+  .rps-button.selected {
+    border-color: hsl(var(--cyan));
+    background: linear-gradient(135deg, hsl(var(--cyan) / 0.2) 0%, hsl(var(--magenta) / 0.2) 100%);
+    box-shadow: var(--shadow-glow-cyan);
+  }
+
+  /* Score Display */
+  .score-display {
+    @apply text-5xl font-bold;
+    font-family: 'Orbitron', sans-serif;
+    text-shadow: 0 0 20px currentColor;
+  }
+
+  /* Game Row */
+  .game-row {
+    @apply relative overflow-hidden rounded-xl p-4;
+    background: var(--gradient-card);
+    border: 1px solid hsl(var(--border));
+  }
+
+  .game-row.active {
+    border-color: hsl(var(--cyan) / 0.5);
+    box-shadow: inset 0 0 30px hsl(var(--cyan) / 0.1);
+  }
+
+  .game-row.completed {
+    border-color: hsl(var(--success) / 0.3);
+  }
+
+  /* Pulse Animation */
+  @keyframes pulse-glow {
+    0%, 100% {
+      opacity: 1;
+      box-shadow: 0 0 20px hsl(var(--cyan) / 0.4);
+    }
+    50% {
+      opacity: 0.8;
+      box-shadow: 0 0 40px hsl(var(--cyan) / 0.6);
+    }
+  }
+
+  .pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  /* Slide In Animation */
+  @keyframes slide-up {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-slide-up {
+    animation: slide-up 0.4s ease-out forwards;
+  }
+
+  /* Stagger children */
+  .stagger-children > * {
+    animation: slide-up 0.4s ease-out forwards;
+    opacity: 0;
+  }
+
+  .stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+  .stagger-children > *:nth-child(2) { animation-delay: 50ms; }
+  .stagger-children > *:nth-child(3) { animation-delay: 100ms; }
+  .stagger-children > *:nth-child(4) { animation-delay: 150ms; }
+  .stagger-children > *:nth-child(5) { animation-delay: 200ms; }
+  .stagger-children > *:nth-child(6) { animation-delay: 250ms; }
+  .stagger-children > *:nth-child(7) { animation-delay: 300ms; }
+  .stagger-children > *:nth-child(8) { animation-delay: 350ms; }
+  .stagger-children > *:nth-child(9) { animation-delay: 400ms; }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: var(--gradient-primary);
+  }
+
+  .text-gradient-accent {
+    @apply bg-clip-text text-transparent;
+    background-image: var(--gradient-accent);
+  }
+
+  .bg-gradient-primary {
+    background-image: var(--gradient-primary);
+  }
+
+  .bg-gradient-accent {
+    background-image: var(--gradient-accent);
+  }
+
+  .bg-gradient-success {
+    background-image: var(--gradient-success);
+  }
+
+  .bg-gradient-card {
+    background: var(--gradient-card);
+  }
+
+  .bg-gradient-surface {
+    background: var(--gradient-surface);
   }
 }

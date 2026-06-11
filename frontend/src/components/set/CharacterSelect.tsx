@@ -1,102 +1,12 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { Check } from 'lucide-react';
+import { Check, Search } from 'lucide-react';
+import { CHARACTERS, slugToLabel } from '@/lib/characters';
 
-// Lista de personajes basada en el orden oficial de Smash Ultimate
-// y en los archivos disponibles en public/stock_icons.
-const CHARACTERS = [
-  'mario',
-  'donkey_kong',
-  'link',
-  'samus',
-  'dark_samus',
-  'yoshi',
-  'kirby',
-  'fox',
-  'pikachu',
-  'luigi',
-  'ness',
-  'captain_falcon',
-  'jigglypuff',
-  'peach',
-  'daisy',
-  'bowser',
-  'ice_climbers',
-  'sheik',
-  'zelda',
-  'dr_mario',
-  'pichu',
-  'falco',
-  'marth',
-  'lucina',
-  'young_link',
-  'ganondorf',
-  'mewtwo',
-  'roy',
-  'chrom',
-  'mr_game_and_watch',
-  'meta_knight',
-  'pit',
-  'dark_pit',
-  'zero_suit_samus',
-  'wario',
-  'snake',
-  'ike',
-  'pokemon_trainer',
-  'diddy_kong',
-  'lucas',
-  'sonic',
-  'king_dedede',
-  'olimar',
-  'lucario',
-  'rob',
-  'toon_link',
-  'wolf',
-  'villager',
-  'mega_man',
-  'wii_fit_trainer',
-  'rosalina_and_luma',
-  'little_mac',
-  'greninja',
-  'mii_fighter',
-  'palutena',
-  'pac_man',
-  'robin',
-  'shulk',
-  'bowser_jr',
-  'duck_hunt',
-  'ryu',
-  'ken',
-  'cloud',
-  'corrin',
-  'bayonetta',
-  'inkling',
-  'ridley',
-  'simon',
-  'richter',
-  'king_k_rool',
-  'isabelle',
-  'gaogaen',
-  'packun_flower',
-  'joker',
-  'dq_hero',
-  'banjo_and_kazooie',
-  'terry',
-  'byleth',
-  'minmin',
-  'steve',
-  'sephiroth',
-  'homura',
-  'kazuya',
-  'sora',
-];
-
-function slugToLabel(slug: string) {
-  return slug
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
+const assetBase = import.meta.env.BASE_URL.endsWith('/')
+  ? import.meta.env.BASE_URL
+  : `${import.meta.env.BASE_URL}/`;
 
 export function CharacterSelect({
   value,
@@ -108,73 +18,81 @@ export function CharacterSelect({
   disabled?: boolean;
 }) {
   const [query, setQuery] = useState('');
-  const [debounced, setDebounced] = useState(query);
-  const [focused, setFocused] = useState(false);
-
-  // simple debounce implementation local to the component
-  React.useEffect(() => {
-    const t = setTimeout(() => setDebounced(query), 150);
-    return () => clearTimeout(t);
-  }, [query]);
+  const gridRef = useRef<HTMLDivElement>(null);
 
   const options = useMemo(() => {
-    const q = debounced.trim().toLowerCase();
-    const filtered = CHARACTERS.filter((c) => {
+    const q = query.trim().toLowerCase();
+    return CHARACTERS.filter((c) => {
       if (!q) return true;
-      const slug = c.toLowerCase();
-      const label = slugToLabel(c).toLowerCase();
-      return slug.includes(q) || label.includes(q);
+      return c.toLowerCase().includes(q) || slugToLabel(c).toLowerCase().includes(q);
     });
-    // dedupe preserving order
-    return Array.from(new Set(filtered));
-  }, [debounced]);
+  }, [query]);
+
+  // Scroll selected character into view on mount
+  useEffect(() => {
+    if (value && gridRef.current) {
+      const el = gridRef.current.querySelector(`[data-char="${value}"]`);
+      if (el) el.scrollIntoView({ block: 'center', behavior: 'instant' });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="relative">
-      <Input
-        placeholder="Buscar personaje..."
-        value={focused ? query : value ? slugToLabel(value) : query}
-        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-          const v = e.target.value;
-          setQuery(v);
-        }}
-        onFocus={() => {
-          // when focusing, allow editing the current selection
-          if (value && !query) setQuery(slugToLabel(value));
-          setFocused(true);
-        }}
-        onBlur={() => {
-          // delay hiding to allow click selection
-          setTimeout(() => setFocused(false), 150);
-        }}
-        disabled={disabled}
-      />
+    <div className="space-y-2">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+        <Input
+          placeholder="Buscar personaje..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          disabled={disabled}
+          className="pl-9 bg-gradient-surface border-border/30 focus:border-primary/50"
+        />
+      </div>
 
-      {focused && options.length > 0 && !disabled && (
-        <div className="absolute z-50 mt-2 w-full max-h-96 overflow-auto rounded-md border bg-inherit py-2 shadow-lg">
-          {options.map((slug) => (
-            <button
-              key={slug}
-              type="button"
-              aria-label={slugToLabel(slug)}
-              className={cn(
-                'flex items-center gap-3 w-full px-4 py-3 text-left hover:bg-muted-foreground/5',
-                value === slug && 'bg-muted-foreground/5'
-              )}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                onChange(slug);
-                setQuery('');
-                setFocused(false);
-              }}
-            >
-              <img src={`${import.meta.env.BASE_URL}stock_icons/${slug}.png`} alt={slug} className="h-10 w-10 object-contain" />
-              <span className="flex-1 text-base text-current truncate">{slugToLabel(slug)}</span>
-              {value === slug && <Check className="h-5 w-5 text-success" />}
-            </button>
-          ))}
+      <div
+        ref={gridRef}
+        className="max-h-60 overflow-y-auto scrollbar-gaming rounded-lg border border-border/30 bg-card/50 p-2"
+      >
+        <div className="grid grid-cols-4 sm:grid-cols-5 gap-1">
+          {options.map((slug) => {
+            const isSelected = value === slug;
+            return (
+              <button
+                key={slug}
+                type="button"
+                data-char={slug}
+                onClick={() => !disabled && onChange(slug)}
+                disabled={disabled}
+                className={cn(
+                  'relative flex flex-col items-center gap-0.5 p-1.5 rounded-lg transition-all',
+                  'hover:bg-primary/10 active:scale-95',
+                  isSelected && 'bg-primary/15 ring-1 ring-primary shadow-sm shadow-primary/20'
+                )}
+              >
+                <img
+                  src={`${assetBase}stock_icons/${slug}.png`}
+                  alt={slugToLabel(slug)}
+                  className="w-8 h-8 object-contain"
+                  loading="lazy"
+                />
+                <span className="text-[9px] text-muted-foreground leading-tight text-center line-clamp-1 w-full">
+                  {slugToLabel(slug)}
+                </span>
+                {isSelected && (
+                  <div className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-primary flex items-center justify-center">
+                    <Check className="w-2.5 h-2.5 text-primary-foreground" />
+                  </div>
+                )}
+              </button>
+            );
+          })}
+          {options.length === 0 && (
+            <div className="col-span-full py-4 text-center text-sm text-muted-foreground">
+              No se encontraron personajes
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

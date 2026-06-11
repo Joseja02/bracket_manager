@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { adminApi } from '@/lib/api';
-import { ArrowLeft, Wifi, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Wifi } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScoreBoard } from '@/components/set/ScoreBoard';
 import type { GameRecord } from '@/types';
@@ -17,7 +17,7 @@ export default function AdminLiveSet() {
     const navigate = useNavigate();
     const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
-    const { data: liveData, isLoading, isError, refetch } = useQuery({
+    const { data: liveData, isLoading, isError } = useQuery({
         queryKey: ['adminLiveSet', setId],
         queryFn: () => adminApi.getSetLiveState(setId!),
         enabled: !!setId,
@@ -47,8 +47,8 @@ export default function AdminLiveSet() {
             <AppLayout>
                 <div className="text-center py-10">
                     <p className="text-muted-foreground">Error al cargar el set en vivo.</p>
-                    <Button variant="outline" onClick={() => navigate('/admin/reports')} className="mt-4">
-                        Volver a reportes
+                    <Button variant="outline" onClick={() => navigate(-1)} className="mt-4">
+                        Volver
                     </Button>
                 </div>
             </AppLayout>
@@ -95,7 +95,7 @@ export default function AdminLiveSet() {
                     <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => navigate('/admin/reports')}
+                        onClick={() => (setDetail.eventId ? navigate(`/events/${setDetail.eventId}`) : navigate(-1))}
                         className="shrink-0"
                     >
                         <ArrowLeft className="w-5 h-5" />
@@ -183,18 +183,6 @@ export default function AdminLiveSet() {
                         </div>
                     ))}
                 </section>
-
-                {/* Debug del estado crudo (Opcional, puede estar oculto o al final) */}
-                <Card className="bg-muted/30 border-dashed">
-                    <CardHeader className="p-3">
-                        <CardTitle className="text-xs font-mono">Info Técnica</CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-3 text-xs font-mono text-muted-foreground">
-                        <p>Set ID: {setId}</p>
-                        <p>Status: {setDetail.status}</p>
-                        <p>Last Activity: {liveData?.lastUpdate ? new Date(liveData.lastUpdate).toLocaleString() : 'N/A'}</p>
-                    </CardContent>
-                </Card>
 
             </div>
         </AppLayout>
