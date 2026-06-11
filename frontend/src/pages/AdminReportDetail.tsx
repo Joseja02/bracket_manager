@@ -92,7 +92,7 @@ export default function AdminReportDetail() {
     onSuccess: () => {
       toast({
         title: 'Reporte aprobado',
-        description: 'El set será enviado a start.gg',
+        description: 'Gracias maja',
       });
       queryClient.invalidateQueries({ queryKey: ['adminReports'] });
       setTimeout(() => navigate(eventId ? `/admin/reports?eventId=${eventId}` : '/admin/reports'), 1000);

@@ -10,7 +10,7 @@ import { StageSelector } from '@/components/set/StageSelector';
 import { LocalRps } from '@/components/set/LocalRps';
 import { competitorApi } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
-import { GameRecord, calculateScore, StageName } from '@/types';
+import { GameRecord, calculateScore, StageName, isGameComplete } from '@/types';
 import { ArrowLeft, Send, Users, Save, CheckCircle2, Loader2 } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
 import { toast } from '@/hooks/use-toast';
@@ -336,11 +336,7 @@ export default function SetDetail() {
     const updated = games.map((g) => (g.index === updatedGame.index ? updatedGame : g));
     setGames(updated);
 
-    // Validar que el game esté completo: stage, winner, characters Y stocks válidas
-    const hasValidStocks = updatedGame.winner 
-      ? (updatedGame.winner === 'p1' ? (updatedGame.stocksP1 !== null && updatedGame.stocksP1 !== undefined) : (updatedGame.stocksP2 !== null && updatedGame.stocksP2 !== undefined))
-      : true;
-    const isComplete = updatedGame.stage && updatedGame.winner && updatedGame.characterP1 && updatedGame.characterP2 && hasValidStocks;
+    const isComplete = isGameComplete(updatedGame);
     
     if (isComplete && games.length < effectiveBestOf) {
       const newScore = calculateScore(updated);
@@ -387,14 +383,8 @@ export default function SetDetail() {
 
   const canSubmit = () => {
     const hasWinner = score.p1 >= gamesNeeded || score.p2 >= gamesNeeded;
-    // Validar que todos los games tengan todos los campos necesarios, incluyendo stocks válidas
-    const allGamesComplete = games.every((g) => {
-      const hasValidStocks = g.winner 
-        ? (g.winner === 'p1' ? (g.stocksP1 !== null && g.stocksP1 !== undefined) : (g.stocksP2 !== null && g.stocksP2 !== undefined))
-        : true;
-      return g.stage && g.winner && g.characterP1 && g.characterP2 && hasValidStocks;
-    });
-    return hasWinner && allGamesComplete;
+    const completedGames = games.filter(isGameComplete);
+    return hasWinner && completedGames.length >= Math.max(score.p1, score.p2);
   };
 
   const handleSubmit = () => {

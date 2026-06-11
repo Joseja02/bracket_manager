@@ -37,7 +37,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useSetData } from '@/hooks/useSetData';
 import { useDebounce } from '@/hooks/useDebounce';
 import { competitorApi } from '@/lib/api';
-import { GameRecord, StageName, STAGES, calculateScore } from '@/types';
+import { GameRecord, StageName, STAGES, calculateScore, isGameComplete } from '@/types';
 import { toast } from '@/hooks/use-toast';
 import { ArrowLeft, RefreshCw, Save, CheckCircle2, RotateCcw, Handshake, AlertTriangle, Repeat } from 'lucide-react';
 
@@ -174,7 +174,7 @@ export default function SetPage() {
   }, [rpsWinner, currentGame, hasWinner]);
 
   const completedGameIndices = useMemo(
-    () => games.filter((g) => g.stage && g.winner && g.characterP1 && g.characterP2).map((g) => g.index),
+    () => games.filter(isGameComplete).map((g) => g.index),
     [games]
   );
 
@@ -404,7 +404,7 @@ export default function SetPage() {
     const updated = games.map((g) => (g.index === savedGame.index ? savedGame : g));
     setGames(updated);
 
-    const isComplete = savedGame.stage && savedGame.winner && savedGame.characterP1 && savedGame.characterP2;
+    const isComplete = isGameComplete(savedGame);
     if (isComplete && games.length < effectiveBestOf) {
       const newScore = calculateScore(updated);
       const setHasWinner = newScore.p1 >= gamesNeeded || newScore.p2 >= gamesNeeded;
@@ -426,8 +426,7 @@ export default function SetPage() {
               characterP2: lastGame.characterP2,
             },
           ]);
-          // Auto-ban winning stage for counterpick, track per-game
-          setBansByGame((prev) => ({ ...prev, [nextIndex]: lastGame.stage ? [lastGame.stage] : [] }));
+          setBansByGame((prev) => ({ ...prev, [nextIndex]: [] }));
           // Update rpsWinner to previous game winner (for banner logic in games 2+)
           setRpsWinner(lastGame.winner || 'p1');
         }
@@ -480,12 +479,7 @@ export default function SetPage() {
 
   // ─── Submit ───────────────────────────────────────────────────
   const canSubmit = () => {
-    const completedGames = games.filter((g) => {
-      const hasValidStocks = g.winner
-        ? g.winner === 'p1' ? g.stocksP1 !== null && g.stocksP1 !== undefined : g.stocksP2 !== null && g.stocksP2 !== undefined
-        : true;
-      return g.stage && g.winner && g.characterP1 && g.characterP2 && hasValidStocks;
-    });
+    const completedGames = games.filter(isGameComplete);
     return hasWinner && completedGames.length >= Math.max(score.p1, score.p2);
   };
 
@@ -772,9 +766,8 @@ export default function SetPage() {
                 {/* Permite deshacer el stage elegido (gentleman/repetido/pick) mientras el game no tenga ganador */}
                 {!currentGame.winner && (
                   <Button
-                    variant="ghost"
                     size="sm"
-                    className="w-full gap-1.5 text-xs text-muted-foreground"
+                    className="w-full gap-1.5 text-sm bg-gradient-primary text-white hover:opacity-90 active:scale-[0.98]"
                     onClick={resetBansForGame}
                   >
                     <RotateCcw className="w-3.5 h-3.5" />

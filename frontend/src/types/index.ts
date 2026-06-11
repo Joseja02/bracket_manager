@@ -130,9 +130,68 @@ export interface ReportDetail extends ReportSummary {
 }
 
 export function applyStocksConstraint(game: GameRecord): GameRecord {
+  if (areStocksUnknown(game)) return game;
   if (game.winner === 'p1') return { ...game, stocksP1: game.stocksP1 ?? 1, stocksP2: 0 };
   if (game.winner === 'p2') return { ...game, stocksP1: 0, stocksP2: game.stocksP2 ?? 1 };
   return game;
+}
+
+/** Ambos stocks null = el usuario eligió "Desconocido" explícitamente. */
+export function areStocksUnknown(game: GameRecord): boolean {
+  return game.stocksP1 === null && game.stocksP2 === null;
+}
+
+export function hasValidStocks(game: GameRecord): boolean {
+  if (!game.winner) return true;
+
+  if (game.winner === 'p1') {
+    if (areStocksUnknown(game)) return true;
+    return (
+      game.stocksP1 !== null &&
+      game.stocksP1 >= 1 &&
+      game.stocksP1 <= 3 &&
+      game.stocksP2 === 0
+    );
+  }
+
+  if (game.winner === 'p2') {
+    if (areStocksUnknown(game)) return true;
+    return (
+      game.stocksP2 !== null &&
+      game.stocksP2 >= 1 &&
+      game.stocksP2 <= 3 &&
+      game.stocksP1 === 0
+    );
+  }
+
+  return false;
+}
+
+export function isGameComplete(game: GameRecord): boolean {
+  return !!(
+    game.stage &&
+    game.winner &&
+    game.characterP1 &&
+    game.characterP2 &&
+    hasValidStocks(game)
+  );
+}
+
+export function getWinnerStocksSelectValue(game: GameRecord): string {
+  if (!game.winner) return '';
+  if (areStocksUnknown(game)) return 'unknown';
+
+  if (game.winner === 'p1') {
+    if (game.stocksP1 !== null && game.stocksP1 >= 1) return String(game.stocksP1);
+    return '';
+  }
+
+  if (game.winner === 'p2') {
+    if (game.stocksP2 !== null && game.stocksP2 >= 1) return String(game.stocksP2);
+    return '';
+  }
+
+  return '';
 }
 
 export function calculateScore(games: GameRecord[]): { p1: number; p2: number } {

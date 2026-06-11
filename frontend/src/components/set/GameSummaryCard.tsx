@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 import { slugToLabel } from '@/lib/characters';
-import { GameRecord } from '@/types';
+import { GameRecord, isGameComplete, areStocksUnknown } from '@/types';
 import { Trophy, MapPin, Plus } from 'lucide-react';
 
 interface GameSummaryCardProps {
@@ -13,7 +13,7 @@ interface GameSummaryCardProps {
 }
 
 export function GameSummaryCard({ game, p1Name, p2Name, isCurrent = false, onClick, readOnly = false }: GameSummaryCardProps) {
-  const isComplete = game.stage && game.winner && game.characterP1 && game.characterP2;
+  const isComplete = isGameComplete(game);
   const winnerName = game.winner === 'p1' ? p1Name : game.winner === 'p2' ? p2Name : null;
 
   const Wrapper = readOnly ? 'div' : 'button';
@@ -92,15 +92,19 @@ export function GameSummaryCard({ game, p1Name, p2Name, isCurrent = false, onCli
         {/* Stocks indicator */}
         {isComplete && game.winner && (
           <div className="flex items-center gap-1">
-            {Array.from({ length: game.winner === 'p1' ? (game.stocksP1 || 0) : (game.stocksP2 || 0) }).map((_, i) => (
-              <div
-                key={i}
-                className={cn(
-                  'w-2 h-2 rounded-full',
-                  game.winner === 'p1' ? 'bg-primary' : 'bg-secondary'
-                )}
-              />
-            ))}
+            {areStocksUnknown(game) ? (
+              <span className="text-xs text-muted-foreground">?</span>
+            ) : (
+              Array.from({ length: game.winner === 'p1' ? (game.stocksP1 || 0) : (game.stocksP2 || 0) }).map((_, i) => (
+                <div
+                  key={i}
+                  className={cn(
+                    'w-2 h-2 rounded-full',
+                    game.winner === 'p1' ? 'bg-primary' : 'bg-secondary'
+                  )}
+                />
+              ))
+            )}
           </div>
         )}
       </div>

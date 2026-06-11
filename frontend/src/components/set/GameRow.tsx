@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import CharacterSelect from './CharacterSelect';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
-import { GameRecord, StageName, STAGES } from '@/types';
+import { GameRecord, StageName, STAGES, isGameComplete, getWinnerStocksSelectValue } from '@/types';
 import { Trophy } from 'lucide-react';
 import { resolveCharacterSlug } from '@/lib/characters';
 
@@ -39,17 +39,8 @@ export function GameRow({ game, p1Name, p2Name, onChange, readonly = false, lock
     onChange(updated);
   };
 
-  // Un game está completo solo si tiene todos los campos necesarios Y stocks válidas
-  // Stocks válidas = (1, 2, 3) o null (unknown), pero NO puede estar sin definir si hay ganador
-  const hasValidStocks = game.winner 
-    ? (game.winner === 'p1' ? (game.stocksP1 !== null && game.stocksP1 !== undefined) : (game.stocksP2 !== null && game.stocksP2 !== undefined))
-    : true; // Si no hay ganador, no se requieren stocks aún
-  
-  const isComplete = game.stage && game.winner && game.characterP1 && game.characterP2 && hasValidStocks;
-  const stocksP1Value =
-    game.stocksP1 === null ? 'unknown' : (game.stocksP1?.toString() || '');
-  const stocksP2Value =
-    game.stocksP2 === null ? 'unknown' : (game.stocksP2?.toString() || '');
+  const isComplete = isGameComplete(game);
+  const winnerStocksValue = getWinnerStocksSelectValue(game);
 
   return (
     <div className={cn('gaming-card p-4 space-y-4', isComplete && 'border-primary/30')}>
@@ -110,13 +101,7 @@ export function GameRow({ game, p1Name, p2Name, onChange, readonly = false, lock
         <div className="space-y-2">
           <Label>Stocks del ganador</Label>
           <Select
-            value={
-              game.winner === 'p1'
-                ? stocksP1Value
-                : game.winner === 'p2'
-                  ? stocksP2Value
-                  : ''
-            }
+            value={game.winner ? winnerStocksValue : ''}
             onValueChange={(value) => {
               if (!game.winner) return;
               if (value === 'unknown') {

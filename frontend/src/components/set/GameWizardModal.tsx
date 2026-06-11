@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { GameRecord, StageName, STAGES } from '@/types';
+import { GameRecord, StageName, STAGES, hasValidStocks, areStocksUnknown } from '@/types';
 import { ArrowLeft, Check, Trophy, MapPin, Ban } from 'lucide-react';
 import { CharacterSelect } from './CharacterSelect';
 import { slugToLabel, resolveCharacterSlug } from '@/lib/characters';
@@ -97,7 +97,7 @@ export function GameWizardModal({
       case 'winner': return !!draft.winner;
       case 'charP1': return !!draft.characterP1;
       case 'charP2': return !!draft.characterP2;
-      case 'stocks': return true;
+      case 'stocks': return hasValidStocks(draft);
       case 'preview': return true;
       default: return false;
     }
@@ -305,13 +305,16 @@ export function GameWizardModal({
               </p>
               <div className="grid grid-cols-4 gap-3">
                 {([null, 1, 2, 3] as const).map((s) => {
+                  const isUnknown = areStocksUnknown(draft);
                   const winnerStocks = draft.winner === 'p1' ? draft.stocksP1 : draft.stocksP2;
-                  const isSelected = s === null ? winnerStocks === null : winnerStocks === s;
+                  const isSelected = s === null ? isUnknown : winnerStocks === s;
                   return (
                     <button
                       key={s ?? 'unknown'}
                       onClick={() => {
-                        if (draft.winner === 'p1') {
+                        if (s === null) {
+                          setDraft({ ...draft, stocksP1: null, stocksP2: null });
+                        } else if (draft.winner === 'p1') {
                           setDraft({ ...draft, stocksP1: s, stocksP2: 0 });
                         } else {
                           setDraft({ ...draft, stocksP1: 0, stocksP2: s });
