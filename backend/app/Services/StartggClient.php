@@ -353,50 +353,12 @@ class StartggClient
     $tournamentId = data_get($event, 'tournament.id');
     $tournamentOwner = data_get($event, 'tournament.owner.id');
     $userId = (int) $user->startgg_user_id;
-    $isAdminEvent = false;
 
-    // WORKAROUND: La API no devuelve admins con OAuth tokens
-    // Consideramos admin a:
-    // 1. El owner del torneo
-    // 2. Cualquier usuario que tenga el torneo en su lista (participantes registrados)
-    // Para verificar permisos reales, debemos intentar hacer la mutación
+    // Solo el owner del torneo se considera admin aquí. Los admins delegados
+    // se verifican en EventController::adminCheck (PAT de app + tournament.admins),
+    // que es la fuente fiable. Antes se consideraba admin a cualquier usuario
+    // inscrito en el torneo, lo que mostraba "Iniciar Set" a jugadores sin permisos.
     $isAdmin = $tournamentOwner == $userId;
-    if ($isAdminEvent) {
-      $isAdmin = true; // mantenido por compatibilidad si se añade en el futuro
-    }
-
-    // Si no es owner, verificar si el torneo aparece en sus torneos
-    if (!$isAdmin) {
-      try {
-        $userTournamentsQuery = <<<'GQL'
-                query CheckUserTournaments($perPage: Int!) {
-                  currentUser {
-                    tournaments(query: {perPage: $perPage}) {
-                      nodes {
-                        id
-                      }
-                    }
-                  }
-                }
-                GQL;
-
-        $userTournaments = $this->query($user, $userTournamentsQuery, ['perPage' => 50]);
-        $tournamentIds = collect(data_get($userTournaments, 'currentUser.tournaments.nodes', []))
-          ->pluck('id')
-          ->toArray();
-
-        // Si el torneo aparece en la lista del usuario, considerarlo admin
-        // (esto incluye owners y staff)
-        $isAdmin = in_array($tournamentId, $tournamentIds);
-
-      } catch (\Exception $e) {
-        Log::error('Error checking user tournaments', [
-          'event_id' => $eventId,
-          'error' => $e->getMessage()
-        ]);
-      }
-    }
-
     $isAdminEvent = $isAdmin;
 
     Log::info('Event admin check', [
@@ -826,6 +788,7 @@ class StartggClient
       'steve' => 1766,
       'sephiroth' => 1777,
       'pyra_mythra' => 1795,
+      'pyra_and_mythra' => 1795,
       'homura' => 1795,
       'kazuya' => 1846,
       'sora' => 1897,

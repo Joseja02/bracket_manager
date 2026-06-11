@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use App\Services\StartggClient;
+use App\Services\StartggAppClient;
 use App\Models\Report;
 use App\Models\Game;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +17,10 @@ use Illuminate\Support\Facades\Cache;
 
 class SetController extends Controller
 {
-    public function __construct(private StartggClient $client) {}
+    public function __construct(
+        private StartggClient $client,
+        private StartggAppClient $appClient,
+    ) {}
 
     /**
      * Obtener detalles de un set
@@ -90,8 +94,16 @@ class SetController extends Controller
         $bestOf = (int) ($payload['bestOf'] ?? 3);
         
         try {
-            // Verificar que el usuario sea admin del torneo
+            // Verificar que el usuario sea admin del torneo del evento
             $setDetail = $this->client->getSetDetail($user, $setId);
+            $eventId = $setDetail['eventId'] ?? null;
+
+            if (!$eventId || !$this->isEventAdmin($user, $eventId)) {
+                return response()->json([
+                    'error' => 'Unauthorized',
+                    'message' => 'Solo los administradores del torneo pueden iniciar sets',
+                ], 403);
+            }
 
             // Si start.gg indica que el set NO está iniciado, debemos empezar "limpio"
             // y no arrastrar reportes/bans/drafts previos (caso típico: set reiniciado tras rechazo).
@@ -136,6 +148,7 @@ class SetController extends Controller
                 foreach ($cacheKeys as $key) {
                     Cache::forget($key);
                 }
+                $this->forgetSpectateCache($setId);
                 
                 Log::info('Cache invalidated after starting set', [
                     'set_id' => $setId,
@@ -334,6 +347,7 @@ class SetController extends Controller
             foreach ($cacheKeys as $key) {
                 Cache::forget($key);
             }
+            $this->forgetSpectateCache($setId);
 
             return response()->json([
                 'message' => 'Report submitted successfully',
@@ -575,6 +589,8 @@ class SetController extends Controller
                 ['data' => $payload['data'], 'status' => 'draft']
             );
 
+            $this->forgetSpectateCache($setId);
+
             return response()->json($draft);
         } catch (\Throwable $e) {
             Log::error('Error saving set draft', ['set_id' => $setId, 'user_id' => $user->id, 'error' => $e->getMessage()]);
@@ -652,6 +668,176 @@ class SetController extends Controller
 
         return $errors;
     }
+
+    /**
+     * Vista en vivo para espectadores (solo lectura, polling cacheado).
+     * GET /api/sets/{setId}/spectate
+     *
+     * - Metadata de start.gg cacheada 10 min (nombres, ronda).
+     * - Progreso en vivo desde BD local cacheado 5 s (compartido entre viewers).
+     * - Sin llamadas a start.gg en el camino caliente del polling.
+     */
+    public function spectate(Request $request, $setId)
+    {
+        $user = Auth::user();
+        $cacheKey = "set_spectate_{$setId}";
+
+        try {
+            $payload = Cache::remember($cacheKey, now()->addSeconds(5), function () use ($user, $setId) {
+                $meta = Cache::remember(
+                    "set_spectate_meta_{$setId}",
+                    now()->addMinutes(10),
+                    fn () => $this->client->getSetDetail($user, $setId)
+                );
+
+                $status = $meta['status'] ?? 'not_started';
+                if ($status !== 'in_progress') {
+                    return [
+                        'available' => false,
+                        'reason' => $status === 'not_started' ? 'not_started' : 'finished',
+                        'setDetail' => $this->spectateSetDetail($meta),
+                    ];
+                }
+
+                $state = SetState::where('set_id', $setId)->first();
+                $bestOf = (int) ($state?->best_of ?: ($meta['bestOf'] ?? 3));
+
+                $latestDraft = SetDraft::where('set_id', $setId)
+                    ->orderBy('updated_at', 'desc')
+                    ->first();
+
+                $draftData = $latestDraft?->data;
+                $games = is_array($draftData['games'] ?? null) ? $draftData['games'] : [];
+                $score = $this->calculateScoreFromGames($games);
+                $phase = $this->deriveSpectatePhase($draftData, $games, $bestOf, $score);
+
+                return [
+                    'available' => true,
+                    'setDetail' => array_merge($this->spectateSetDetail($meta), ['bestOf' => $bestOf]),
+                    'draft' => $draftData,
+                    'phase' => $phase,
+                    'score' => $score,
+                    'lastUpdate' => $latestDraft?->updated_at?->toIso8601String(),
+                    'cachedAt' => now()->toIso8601String(),
+                ];
+            });
+
+            if (!($payload['available'] ?? true)) {
+                return response()->json($payload, 409);
+            }
+
+            return response()->json($payload);
+        } catch (\Throwable $e) {
+            Log::error('Error fetching spectate state', [
+                'set_id' => $setId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'error' => 'Failed to fetch spectate state',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    private function spectateSetDetail(array $meta): array
+    {
+        return [
+            'id' => $meta['id'],
+            'eventId' => $meta['eventId'] ?? null,
+            'eventName' => $meta['eventName'] ?? null,
+            'round' => $meta['round'] ?? null,
+            'bestOf' => (int) ($meta['bestOf'] ?? 3),
+            'status' => $meta['status'] ?? null,
+            'p1' => $meta['p1'] ?? null,
+            'p2' => $meta['p2'] ?? null,
+        ];
+    }
+
+    private function calculateScoreFromGames(array $games): array
+    {
+        $p1 = 0;
+        $p2 = 0;
+        foreach ($games as $game) {
+            if (($game['winner'] ?? null) === 'p1') {
+                $p1++;
+            } elseif (($game['winner'] ?? null) === 'p2') {
+                $p2++;
+            }
+        }
+
+        return ['p1' => $p1, 'p2' => $p2];
+    }
+
+    private function deriveSpectatePhase(?array $draft, array $games, int $bestOf, array $score): string
+    {
+        if (!$draft) {
+            return 'waiting';
+        }
+
+        if (empty($draft['rpsWinner'])) {
+            return 'rps';
+        }
+
+        $current = !empty($games) ? $games[count($games) - 1] : null;
+        if ($current && empty($current['stage'])) {
+            return 'bans';
+        }
+
+        $gamesNeeded = (int) ceil($bestOf / 2);
+        if ($score['p1'] >= $gamesNeeded || $score['p2'] >= $gamesNeeded) {
+            return 'submit';
+        }
+
+        return 'games';
+    }
+
+    private function forgetSpectateCache(string|int $setId): void
+    {
+        Cache::forget("set_spectate_{$setId}");
+        Cache::forget("set_spectate_meta_{$setId}");
+    }
+
+    private function isEventAdmin($user, $eventId): bool
+    {
+        if (!$user?->startgg_user_id) {
+            return false;
+        }
+
+        try {
+            $event = $this->client->getEvent($user, $eventId);
+            if (!empty($event['isAdminEvent'])) {
+                return true;
+            }
+
+            $slug = data_get($event, 'tournamentSlug') ?? data_get($event, 'tournamentName');
+            if (!$slug) {
+                return false;
+            }
+
+            $info = $this->appClient->getTournamentAdminInfo($slug);
+            $ownerId = $info['ownerId'] ?? null;
+            $adminIds = collect($info['adminUserIds'] ?? [])
+                ->map(fn ($id) => (string) $id)
+                ->filter()
+                ->values()
+                ->all();
+
+            $startggUserId = (string) $user->startgg_user_id;
+
+            return ($ownerId && (string) $ownerId === $startggUserId)
+                || collect($adminIds)->contains(fn ($id) => (string) $id === $startggUserId);
+        } catch (\Throwable $e) {
+            Log::warning('set admin check failed', [
+                'event_id' => $eventId,
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+    }
+
     /**
      * Obtener estado en vivo del set para admin (incluyendo borradores)
      * GET /api/admin/sets/{setId}/live
@@ -714,6 +900,7 @@ class SetController extends Controller
 
             // Invalidar caches
             Cache::forget("set_detail_{$setId}");
+            $this->forgetSpectateCache($setId);
 
             Log::info('Set reset by admin', [
                 'set_id' => $setId,

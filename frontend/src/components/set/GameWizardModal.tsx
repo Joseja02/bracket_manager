@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 import { GameRecord, StageName, STAGES } from '@/types';
 import { ArrowLeft, Check, Trophy, MapPin, Ban } from 'lucide-react';
 import { CharacterSelect } from './CharacterSelect';
-import { slugToLabel } from '@/lib/characters';
+import { slugToLabel, resolveCharacterSlug } from '@/lib/characters';
 
 type WizardStep = 'stage' | 'winner' | 'charP1' | 'charP2' | 'stocks' | 'preview';
 
@@ -360,7 +360,7 @@ export function GameWizardModal({
                   <div className="flex items-center gap-2">
                     {draft.characterP1 && (
                       <img
-                        src={`${assetBase}stock_icons/${draft.characterP1}.png`}
+                        src={`${assetBase}stock_icons/${resolveCharacterSlug(draft.characterP1!)}.png`}
                         alt={draft.characterP1}
                         className="w-8 h-8 object-contain"
                       />
@@ -373,7 +373,7 @@ export function GameWizardModal({
                   <div className="flex items-center gap-2">
                     {draft.characterP2 && (
                       <img
-                        src={`${assetBase}stock_icons/${draft.characterP2}.png`}
+                        src={`${assetBase}stock_icons/${resolveCharacterSlug(draft.characterP2!)}.png`}
                         alt={draft.characterP2}
                         className="w-8 h-8 object-contain"
                       />

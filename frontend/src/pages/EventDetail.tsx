@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { competitorApi, adminApi } from '@/lib/api';
-import { ArrowLeft, Swords, Eye, Play, RefreshCw, Loader2, ChevronRight, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Swords, Eye, Play, RefreshCw, Loader2, RotateCcw } from 'lucide-react';
 import type { SetSummary } from '@/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/hooks/useAuth';
@@ -41,13 +41,18 @@ export default function EventDetail() {
     refetchOnWindowFocus: true,
   });
 
+  // Verificación de admin por evento. El rol global 'admin' no implica ser
+  // admin de ESTE torneo, así que se comprueba salvo que ya sea owner con rol
+  // promocionado (el endpoint también promociona el rol global si procede).
   const { data: adminCheck } = useQuery({
     queryKey: ['eventAdminCheck', eventId],
     queryFn: () => competitorApi.getEventAdminCheck(eventId!, event?.tournamentSlug),
-    enabled: !!eventId && !!event && user?.role !== 'admin',
-    staleTime: 0,
+    enabled: !!eventId && !!event && (!event.isAdmin || user?.role !== 'admin'),
+    staleTime: 60_000,
     retry: false,
   });
+
+  const isEventAdmin = !!event?.isAdmin || adminCheck?.isAdmin === true;
 
   useEffect(() => {
     if (adminCheck?.isAdmin && user?.role !== 'admin') {
@@ -208,7 +213,7 @@ export default function EventDetail() {
           </h2>
 
           {/* Force Best Of toggle (admin only) */}
-          {(event.isAdmin || user?.role === 'admin') && (
+          {isEventAdmin && (
             <div className="gaming-card p-4">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
@@ -268,7 +273,7 @@ export default function EventDetail() {
 
                     <div className="text-xs text-muted-foreground">Bo{set.bestOf}</div>
 
-                    {(event.isAdmin || user?.role === 'admin') ? (
+                    {isEventAdmin ? (
                       <div className="space-y-2">
                         {set.status === 'not_started' && (
                           <button
@@ -286,10 +291,10 @@ export default function EventDetail() {
                         {set.status === 'in_progress' && !canEditRejected && (
                           <div className="flex gap-2">
                             <button
-                              onClick={() => navigate(`/sets/${set.id}`)}
+                              onClick={() => navigate(`/admin/sets/${set.id}/live`)}
                               className="flex-1 py-2.5 px-4 rounded-lg border border-border text-sm font-medium flex items-center justify-center gap-2 hover:border-primary/50 transition-all active:scale-[0.98]"
                             >
-                              Ver Set <ChevronRight className="w-4 h-4" />
+                              <Eye className="w-4 h-4" /> Ver en vivo
                             </button>
                             <button
                               onClick={() => {
@@ -334,14 +339,14 @@ export default function EventDetail() {
                       >
                         {canEditRejected ? 'Editar Reporte' : 'Reportar Set'}
                       </button>
-                    ) : (
+                    ) : set.status === 'in_progress' ? (
                       <button
-                        onClick={() => navigate(`/sets/${set.id}`)}
+                        onClick={() => navigate(`/sets/${set.id}/spectate`)}
                         className="w-full py-2.5 px-4 rounded-lg border border-border text-sm font-medium flex items-center justify-center gap-2 hover:border-primary/50 transition-all active:scale-[0.98]"
                       >
-                        <Eye className="w-4 h-4" /> Ver
+                        <Eye className="w-4 h-4" /> Ver en vivo
                       </button>
-                    )}
+                    ) : null}
                   </div>
                 );
               })}

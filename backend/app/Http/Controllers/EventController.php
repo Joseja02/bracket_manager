@@ -107,6 +107,53 @@ class EventController extends Controller
                 ? $resolver()
                 : Cache::remember($cacheKey, now()->addSeconds(10), $resolver);
 
+            if ($fresh) {
+                // Compartir el resultado fresco con el resto de clientes
+                Cache::put($cacheKey, $sets, now()->addSeconds(10));
+            }
+
+            // Fallback "última lista buena": al iniciar un set de un bracket sin
+            // comenzar (IDs preview_*), start.gg arranca la phase y su API tarda
+            // 1-2 min en devolver los sets nuevos (consistencia eventual). Durante
+            // ese hueco devolvería una lista vacía y la UI se quedaría en blanco.
+            // Servimos la última lista no vacía conocida, re-filtrada contra el
+            // estado local para no resucitar sets ya reportados.
+            $lkgKey = "{$cacheKey}_last_good";
+
+            if (empty($sets)) {
+                $fallback = Cache::get($lkgKey);
+                if (!empty($fallback)) {
+                    $setIds = array_column($fallback, 'id');
+                    $reportedIds = Report::whereIn('set_id', $setIds)
+                        ->whereIn('status', ['pending', 'approved'])
+                        ->pluck('set_id')
+                        ->map(fn ($id) => (string) $id)
+                        ->all();
+                    $startedIds = SetState::whereIn('set_id', $setIds)
+                        ->pluck('set_id')
+                        ->map(fn ($id) => (string) $id)
+                        ->all();
+
+                    $sets = array_values(array_filter(array_map(function (array $set) use ($reportedIds, $startedIds) {
+                        if (in_array((string) $set['id'], $reportedIds, true)) {
+                            return null;
+                        }
+                        // El set recién iniciado tiene SetState local: reflejarlo
+                        if (($set['status'] ?? null) === 'not_started' && in_array((string) $set['id'], $startedIds, true)) {
+                            $set['status'] = 'in_progress';
+                        }
+                        return $set;
+                    }, $fallback)));
+
+                    Log::info('Serving last-known-good sets while start.gg catches up', [
+                        'event_id' => $eventId,
+                        'count' => count($sets),
+                    ]);
+                }
+            } else {
+                Cache::put($lkgKey, $sets, now()->addMinutes(3));
+            }
+
             return response()->json($sets);
         } catch (\Throwable $e) {
             Log::error('Error fetching event sets', [
@@ -128,8 +175,10 @@ class EventController extends Controller
     public function show(Request $request, $eventId)
     {
         $user = Auth::user();
-        
-        $cacheKey = "event_{$eventId}_detail";
+
+        // La respuesta incluye isAdmin calculado para ESTE usuario,
+        // por lo que la cache debe ser por usuario.
+        $cacheKey = "event_{$eventId}_detail_user_{$user->id}";
         
         try {
             $event = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user, $eventId) {
@@ -172,7 +221,7 @@ class EventController extends Controller
         if (!$slug) {
             // Fallback: obtener detalles del evento para conseguir el slug (cacheado 5m)
             try {
-                $cacheKey = "event_{$eventId}_detail";
+                $cacheKey = "event_{$eventId}_detail_user_{$user->id}";
                 $event = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user, $eventId) {
                     return $this->client->getEvent($user, $eventId);
                 });

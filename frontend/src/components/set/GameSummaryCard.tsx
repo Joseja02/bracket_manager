@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { slugToLabel } from '@/lib/characters';
 import { GameRecord } from '@/types';
 import { Trophy, MapPin, Plus } from 'lucide-react';
 
@@ -8,17 +9,29 @@ interface GameSummaryCardProps {
   p2Name: string;
   isCurrent?: boolean;
   onClick?: () => void;
+  readOnly?: boolean;
 }
 
-function slugToLabel(slug: string) {
-  return slug.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-export function GameSummaryCard({ game, p1Name, p2Name, isCurrent = false, onClick }: GameSummaryCardProps) {
+export function GameSummaryCard({ game, p1Name, p2Name, isCurrent = false, onClick, readOnly = false }: GameSummaryCardProps) {
   const isComplete = game.stage && game.winner && game.characterP1 && game.characterP2;
   const winnerName = game.winner === 'p1' ? p1Name : game.winner === 'p2' ? p2Name : null;
 
+  const Wrapper = readOnly ? 'div' : 'button';
+  const wrapperProps = readOnly
+    ? { className: 'gaming-card p-4 w-full text-left' }
+    : {
+        onClick,
+        className: 'gaming-card p-4 w-full text-left hover:border-primary/50 transition-all active:scale-[0.98]',
+      };
+
   if (!isComplete && !isCurrent) {
+    if (readOnly) {
+      return (
+        <div className="gaming-card p-4 opacity-60">
+          <p className="text-sm text-center text-muted-foreground">Game {game.index} pendiente</p>
+        </div>
+      );
+    }
     return (
       <button
         onClick={onClick}
@@ -33,13 +46,13 @@ export function GameSummaryCard({ game, p1Name, p2Name, isCurrent = false, onCli
   }
 
   return (
-    <button
-      onClick={onClick}
+    <Wrapper
+      {...wrapperProps}
       className={cn(
-        'gaming-card p-4 w-full text-left transition-all active:scale-[0.98]',
+        readOnly ? 'gaming-card p-4 w-full text-left' : wrapperProps.className,
         isCurrent && 'border-primary/50 glow-cyan',
         isComplete && !isCurrent && 'border-success/30',
-        'hover:border-primary/50'
+        !readOnly && 'hover:border-primary/50'
       )}
     >
       <div className="flex items-center justify-between">
@@ -91,6 +104,6 @@ export function GameSummaryCard({ game, p1Name, p2Name, isCurrent = false, onCli
           </div>
         )}
       </div>
-    </button>
+    </Wrapper>
   );
 }

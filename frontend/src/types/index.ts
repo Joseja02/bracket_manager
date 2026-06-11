@@ -93,6 +93,21 @@ export interface SetDetail extends SetSummary {
   existingReport?: ExistingReport;
 }
 
+export interface SetSpectateResponse {
+  available: boolean;
+  reason?: 'not_started' | 'finished';
+  setDetail: Pick<SetDetail, 'id' | 'eventId' | 'eventName' | 'round' | 'bestOf' | 'p1' | 'p2' | 'status'>;
+  draft?: {
+    games?: GameRecord[];
+    bansByGame?: Record<number, StageName[]>;
+    rpsWinner?: 'p1' | 'p2' | null;
+  } | null;
+  phase?: 'waiting' | 'rps' | 'bans' | 'games' | 'submit';
+  score?: { p1: number; p2: number };
+  lastUpdate?: string | null;
+  cachedAt?: string;
+}
+
 export interface ReportSummary {
   id: ID;
   eventId: ID;

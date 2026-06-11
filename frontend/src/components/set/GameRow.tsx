@@ -8,6 +8,7 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, A
 import { Badge } from '@/components/ui/badge';
 import { GameRecord, StageName, STAGES } from '@/types';
 import { Trophy } from 'lucide-react';
+import { resolveCharacterSlug } from '@/lib/characters';
 
 interface GameRowProps {
   game: GameRecord;
@@ -150,7 +151,7 @@ export function GameRow({ game, p1Name, p2Name, onChange, readonly = false, lock
             <Label>{p1Name} - Personaje</Label>
             {game.characterP1 ? (
               <div className="flex items-center gap-3">
-              <img src={`${import.meta.env.BASE_URL}stock_icons/${game.characterP1}.png`} alt={game.characterP1} className="h-10 w-10 object-contain" />
+              <img src={`${import.meta.env.BASE_URL}stock_icons/${resolveCharacterSlug(game.characterP1!)}.png`} alt={game.characterP1!} className="h-10 w-10 object-contain" />
                 <span className="truncate text-base">{game.characterP1.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}</span>
                 {!readonly && (
                   <button className="ml-auto rounded-lg px-3 py-2 border border-border/30 text-sm hover:border-primary/50 transition-colors" onClick={() => setP1ModalOpen(true)}>
@@ -192,7 +193,7 @@ export function GameRow({ game, p1Name, p2Name, onChange, readonly = false, lock
             <Label>{p2Name} - Personaje</Label>
             {game.characterP2 ? (
               <div className="flex items-center gap-3">
-              <img src={`${import.meta.env.BASE_URL}stock_icons/${game.characterP2}.png`} alt={game.characterP2} className="h-10 w-10 object-contain" />
+              <img src={`${import.meta.env.BASE_URL}stock_icons/${resolveCharacterSlug(game.characterP2!)}.png`} alt={game.characterP2!} className="h-10 w-10 object-contain" />
                 <span className="truncate text-base">{game.characterP2.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}</span>
                 {!readonly && (
                   <button className="ml-auto rounded-lg px-3 py-2 border border-border/30 text-sm hover:border-secondary/50 transition-colors" onClick={() => setP2ModalOpen(true)}>

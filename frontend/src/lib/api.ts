@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { User, EventSummary, SetSummary, SetDetail, ReportSummary, ReportDetail, GameRecord } from '@/types';
+import type { User, EventSummary, SetSummary, SetDetail, ReportSummary, ReportDetail, GameRecord, SetSpectateResponse } from '@/types';
 
 const baseURL = import.meta.env.VITE_API_BASE_URL;
 const normalizedBaseUrl =
@@ -62,6 +62,8 @@ export const competitorApi = {
   postBan: (setId: string | number, stage: string, allStages?: string[]) => api.post(`/sets/${setId}/bans`, { stage, allStages }).then(res => res.data),
   getSetDraft: (setId: string | number) => api.get(`/sets/${setId}/draft`).then(res => res.data),
   postSetDraft: (setId: string | number, data: unknown) => api.post(`/sets/${setId}/draft`, { data }).then(res => res.data),
+  getSetSpectate: (setId: string | number) =>
+    api.get<SetSpectateResponse>(`/sets/${setId}/spectate`).then(res => res.data),
 };
 
 // Admin

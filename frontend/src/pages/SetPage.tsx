@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layouts/AppLayout';
 import { ScoreHeader } from '@/components/set/ScoreHeader';
@@ -38,7 +39,7 @@ import { useDebounce } from '@/hooks/useDebounce';
 import { competitorApi } from '@/lib/api';
 import { GameRecord, StageName, STAGES, calculateScore } from '@/types';
 import { toast } from '@/hooks/use-toast';
-import { ArrowLeft, RefreshCw, Save, CheckCircle2, Send, Loader2, RotateCcw, Handshake, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Save, CheckCircle2, RotateCcw, Handshake, AlertTriangle, Repeat } from 'lucide-react';
 
 export default function SetPage() {
   const { setId } = useParams<{ setId: string }>();
@@ -91,7 +92,16 @@ export default function SetPage() {
     return String(setDetail.p1.userId) === String(uid) || String(setDetail.p2.userId) === String(uid);
   }, [setDetail, user]);
 
-  const isAdmin = user?.role === 'admin' || !!(setDetail as { isAdmin?: boolean })?.isAdmin;
+  // Admin por evento: el admin-check del evento (cacheado 60s).
+  const { data: adminCheck } = useQuery({
+    queryKey: ['eventAdminCheck', String(setDetail?.eventId ?? '')],
+    queryFn: () => competitorApi.getEventAdminCheck(setDetail!.eventId!),
+    enabled: !!setDetail?.eventId,
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  const isAdmin = adminCheck?.isAdmin === true;
 
   // Report status helpers
   const reportStatus = setDetail?.existingReport?.status;
@@ -165,6 +175,12 @@ export default function SetPage() {
     () => games.filter((g) => g.stage && g.winner && g.characterP1 && g.characterP2).map((g) => g.index),
     [games]
   );
+
+  // Escenario del game anterior, para la opción de repetir stage (gentleman rápido)
+  const previousStage = useMemo(() => {
+    if (currentGame.index <= 1) return null;
+    return games.find((g) => g.index === currentGame.index - 1)?.stage ?? null;
+  }, [games, currentGame.index]);
 
   // ─── Draft loading on mount ───────────────────────────────────
   useEffect(() => {
@@ -327,15 +343,6 @@ export default function SetPage() {
     }
   };
 
-  const handleViewSet = () => navigate(`/sets/${setId}?mode=player`);
-
-  const handleForceStatus = (status: string) => {
-    toast({
-      title: 'Función en desarrollo',
-      description: `Forzar estado a "${status}" requiere implementación del backend`,
-    });
-  };
-
   const handleRpsComplete = (winner: 'p1' | 'p2') => {
     setRpsWinner(winner);
     toast({
@@ -429,6 +436,15 @@ export default function SetPage() {
     setGames((prev) => prev.map((g) => (g.index === gameIndex ? { ...g, stage } : g)));
     toast({ title: 'Gentleman confirmado', description: `Game ${gameIndex} se jugará en ${stage}` });
     closeGentleman();
+  };
+
+  // ─── Repetir escenario del game anterior (gentleman rápido) ───
+  const repeatPreviousStage = () => {
+    if (!previousStage) return;
+    const gameIndex = currentGame.index;
+    setBansByGame((prev) => ({ ...prev, [gameIndex]: [] }));
+    setGames((prev) => prev.map((g) => (g.index === gameIndex ? { ...g, stage: previousStage } : g)));
+    toast({ title: 'Escenario repetido', description: `Game ${gameIndex} se jugará en ${previousStage}` });
   };
 
   // ─── Reset bans ───────────────────────────────────────────────
@@ -638,8 +654,6 @@ export default function SetPage() {
             status={setDetail.status}
             isAdmin={isAdmin}
             onStart={() => setBestOfDialogOpen(true)}
-            onView={handleViewSet}
-            onForceStatus={handleForceStatus}
             isStarting={isStarting}
           />
         )}
@@ -657,6 +671,19 @@ export default function SetPage() {
                 p2Name={setDetail.p2.name}
                 onComplete={handleRpsComplete}
               />
+            )}
+
+            {/* Repetir escenario anterior (games 2+) */}
+            {showStageSelection && previousStage && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
+                onClick={repeatPreviousStage}
+              >
+                <Repeat className="w-4 h-4" />
+                Repetir escenario ({previousStage})
+              </Button>
             )}
 
             {/* Gentleman & Reset Bans Buttons */}
@@ -717,6 +744,19 @@ export default function SetPage() {
                     onClick={() => setWizardGameIndex(game.index)}
                   />
                 ))}
+
+                {/* Permite deshacer el stage elegido (gentleman/repetido/pick) mientras el game no tenga ganador */}
+                {!currentGame.winner && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full gap-1.5 text-xs text-muted-foreground"
+                    onClick={resetBansForGame}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Cambiar escenario de Game {currentGame.index}
+                  </Button>
+                )}
               </div>
             )}
 
@@ -736,14 +776,12 @@ export default function SetPage() {
               </div>
             )}
 
-            {/* Submit Button */}
-            {rpsWinner && currentGame?.stage && (
+            {/* Submit Button: solo visible cuando el set ya tiene ganador */}
+            {hasWinner && (
               <SubmitButton
                 canSubmit={canSubmit()}
                 isSubmitting={isSubmitting}
                 onClick={handleSubmit}
-                completedGames={completedGameIndices.length}
-                totalGamesNeeded={gamesNeeded}
               />
             )}
           </>

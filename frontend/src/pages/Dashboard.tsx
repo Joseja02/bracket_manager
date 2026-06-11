@@ -148,7 +148,6 @@ export default function Dashboard() {
                     </Badge>
                   </div>
                   <div className="flex items-center gap-3 mt-3 text-xs text-muted-foreground">
-                    <span>Bo{event.bestOf}</span>
                     {event.isAdmin && (
                       <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
                         <ShieldCheck className="w-3 h-3 mr-1" />

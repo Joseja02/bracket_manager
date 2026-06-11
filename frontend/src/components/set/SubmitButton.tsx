@@ -1,15 +1,13 @@
 import { cn } from '@/lib/utils';
-import { Send, Loader2, AlertCircle } from 'lucide-react';
+import { Send, Loader2 } from 'lucide-react';
 
 interface SubmitButtonProps {
   canSubmit: boolean;
   isSubmitting: boolean;
   onClick: () => void;
-  completedGames: number;
-  totalGamesNeeded: number;
 }
 
-export function SubmitButton({ canSubmit, isSubmitting, onClick, completedGames, totalGamesNeeded }: SubmitButtonProps) {
+export function SubmitButton({ canSubmit, isSubmitting, onClick }: SubmitButtonProps) {
   return (
     <div className="animate-slide-up" style={{ animationDelay: '200ms' }}>
       <button
@@ -28,15 +26,10 @@ export function SubmitButton({ canSubmit, isSubmitting, onClick, completedGames,
             <Loader2 className="w-5 h-5 animate-spin" />
             ENVIANDO...
           </>
-        ) : canSubmit ? (
+        ) : (
           <>
             <Send className="w-5 h-5" />
             ENVIAR REPORTE
-          </>
-        ) : (
-          <>
-            <AlertCircle className="w-5 h-5" />
-            COMPLETA {totalGamesNeeded - completedGames} GAME{totalGamesNeeded - completedGames !== 1 ? 'S' : ''} MÁS
           </>
         )}
       </button>

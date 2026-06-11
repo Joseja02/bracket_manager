@@ -14,6 +14,7 @@ import SetPage from "./pages/SetPage";
 import AdminReports from "./pages/AdminReports";
 import AdminReportDetail from "./pages/AdminReportDetail";
 import AdminLiveSet from "./pages/AdminLiveSet";
+import SpectateSetPage from "./pages/SpectateSetPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -47,6 +48,14 @@ const AppRoutes = () => (
           element={
             <ProtectedRoute>
               <EventDetail />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/sets/:setId/spectate"
+          element={
+            <ProtectedRoute>
+              <SpectateSetPage />
             </ProtectedRoute>
           }
         />

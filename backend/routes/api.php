@@ -34,6 +34,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/sets/{setId}/bans', [SetController::class, 'ban']);
     Route::get('/sets/{setId}/draft', [SetController::class, 'draft']);
     Route::post('/sets/{setId}/draft', [SetController::class, 'saveDraft']);
+    Route::get('/sets/{setId}/spectate', [SetController::class, 'spectate'])
+        ->middleware('throttle:120,1');
 
     // Admin - Reportes
     Route::prefix('admin')->middleware('admin')->group(function () {

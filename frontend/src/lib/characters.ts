@@ -54,7 +54,7 @@ export const CHARACTERS = [
   'rosalina_and_luma',
   'little_mac',
   'greninja',
-  'mii_fighter',
+  'mii_brawler',
   'palutena',
   'pac_man',
   'robin',
@@ -72,25 +72,46 @@ export const CHARACTERS = [
   'richter',
   'king_k_rool',
   'isabelle',
-  'gaogaen',
-  'packun_flower',
+  'incineroar',
+  'piranha_plant',
   'joker',
-  'dq_hero',
+  'hero',
   'banjo_and_kazooie',
   'terry',
   'byleth',
   'minmin',
   'steve',
   'sephiroth',
-  'homura',
+  'pyra_and_mythra',
   'kazuya',
   'sora',
 ] as const;
 
 export type Character = typeof CHARACTERS[number];
 
+const CHARACTER_LABEL_OVERRIDES: Record<string, string> = {
+  pyra_and_mythra: 'Pyra & Mythra',
+};
+
+/** Slugs legacy en reportes antiguos → slug actual (iconos/nombres). */
+const LEGACY_CHARACTER_SLUGS: Record<string, string> = {
+  gaogaen: 'incineroar',
+  mii_fighter: 'mii_brawler',
+  packun_flower: 'piranha_plant',
+  dq_hero: 'hero',
+  homura: 'pyra_and_mythra',
+};
+
+export function resolveCharacterSlug(slug: string): string {
+  return LEGACY_CHARACTER_SLUGS[slug] ?? slug;
+}
+
 export function slugToLabel(slug: string) {
-  return slug
+  const resolved = resolveCharacterSlug(slug);
+  if (CHARACTER_LABEL_OVERRIDES[resolved]) {
+    return CHARACTER_LABEL_OVERRIDES[resolved];
+  }
+  return resolved
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
