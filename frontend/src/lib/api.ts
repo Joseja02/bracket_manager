@@ -81,7 +81,11 @@ export const adminApi = {
   getSetLiveState: (setId: string | number) =>
     api.get<{ setDetail: SetDetail, state: any, draft: any, lastUpdate: string | null }>(`/admin/sets/${setId}/live`).then(res => res.data),
   resetSet: (setId: string | number) =>
-    api.post(`/admin/sets/${setId}/reset`).then(res => res.data),
+    api.post<{ message: string; startggReset?: boolean; startggError?: string | null }>(
+      `/admin/sets/${setId}/reset`,
+    ).then(res => res.data),
+  setBestOf: (setId: string | number, bestOf: 3 | 5) =>
+    api.post<{ message: string; bestOf: number }>(`/admin/sets/${setId}/best-of`, { bestOf }).then(res => res.data),
 };
 
 export default api;

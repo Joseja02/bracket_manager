@@ -62,6 +62,8 @@ export default function SetPage() {
     isSubmitting,
   } = useSetData(setId);
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   // ─── Core state ───────────────────────────────────────────────
   const [rpsWinner, setRpsWinner] = useState<'p1' | 'p2' | null>(null);
   const [bansByGame, setBansByGame] = useState<Record<number, StageName[]>>({ 1: [] });
@@ -294,6 +296,16 @@ export default function SetPage() {
     }
   }, [editRequested, isEditingRejected, isParticipant, rejectedReport]);
 
+  const handleRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   // ─── Loading states ───────────────────────────────────────────
   if (isLoading) {
     return (
@@ -517,8 +529,14 @@ export default function SetPage() {
             >
               <ArrowLeft className="w-5 h-5" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={() => refetch()}>
-              <RefreshCw className="w-4 h-4" />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              aria-label="Actualizar"
+            >
+              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
             </Button>
           </div>
 
@@ -591,8 +609,14 @@ export default function SetPage() {
           >
             <ArrowLeft className="w-5 h-5" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => refetch()}>
-            <RefreshCw className="w-4 h-4" />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            aria-label="Actualizar"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
           </Button>
         </div>
 

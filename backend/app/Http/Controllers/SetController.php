@@ -884,6 +884,24 @@ class SetController extends Controller
     {
         $user = Auth::user();
 
+        // 1. Intentar reiniciar el set en start.gg para que vuelva a estado
+        // inicial (not_started). Esto permite re-iniciarlo y re-especificar el
+        // Best Of. Si falla (p.ej. set "preview" todavía no creado en start.gg),
+        // continuamos con el reinicio local para no dejar datos inconsistentes.
+        $startggReset = false;
+        $startggError = null;
+        try {
+            $this->client->resetSet($user, $setId);
+            $startggReset = true;
+        } catch (\Throwable $e) {
+            $startggError = $e->getMessage();
+            Log::warning('startgg reset failed during set reset, continuing with local reset', [
+                'set_id' => $setId,
+                'admin_id' => $user->id,
+                'error' => $startggError,
+            ]);
+        }
+
         try {
             DB::beginTransaction();
 
@@ -905,10 +923,15 @@ class SetController extends Controller
             Log::info('Set reset by admin', [
                 'set_id' => $setId,
                 'admin_id' => $user->id,
+                'startgg_reset' => $startggReset,
             ]);
 
             return response()->json([
-                'message' => 'Set reiniciado correctamente',
+                'message' => $startggReset
+                    ? 'Set reiniciado correctamente en start.gg. Vuelve a iniciarlo para definir el Best Of.'
+                    : 'Set reiniciado localmente, pero no se pudo reiniciar en start.gg.',
+                'startggReset' => $startggReset,
+                'startggError' => $startggReset ? null : $startggError,
             ]);
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -921,6 +944,61 @@ class SetController extends Controller
 
             return response()->json([
                 'error' => 'Failed to reset set',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Cambiar el Best Of de un set en progreso sin perder el progreso reportado.
+     * El Best Of es un concepto local (start.gg solo cuenta games ganados), así
+     * que basta con actualizar el estado interno del set.
+     * POST /api/admin/sets/{setId}/best-of
+     */
+    public function setBestOf(Request $request, $setId)
+    {
+        $user = Auth::user();
+
+        $validator = Validator::make($request->all(), [
+            'bestOf' => 'required|integer|in:3,5',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'error' => 'Validation failed',
+                'messages' => $validator->errors(),
+            ], 422);
+        }
+
+        $bestOf = (int) $request->input('bestOf');
+
+        try {
+            $state = SetState::firstOrNew(['set_id' => $setId]);
+            $state->best_of = $bestOf;
+            $state->save();
+
+            Cache::forget("set_detail_{$setId}");
+            $this->forgetSpectateCache($setId);
+
+            Log::info('Set best_of changed by admin', [
+                'set_id' => $setId,
+                'admin_id' => $user->id,
+                'best_of' => $bestOf,
+            ]);
+
+            return response()->json([
+                'message' => "Best Of actualizado a BO{$bestOf}",
+                'bestOf' => $bestOf,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Error changing set best_of', [
+                'set_id' => $setId,
+                'admin_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'error' => 'Failed to change best of',
                 'message' => $e->getMessage(),
             ], 500);
         }

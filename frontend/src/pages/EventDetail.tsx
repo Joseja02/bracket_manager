@@ -25,6 +25,7 @@ export default function EventDetail() {
   const [pendingStartSetId, setPendingStartSetId] = useState<SetSummary['id'] | null>(null);
   const [forceBestOf, setForceBestOf] = useState(false);
   const [forcedBestOfValue, setForcedBestOfValue] = useState<3 | 5>(3);
+  const [isRefreshingSets, setIsRefreshingSets] = useState(false);
 
   const { data: event, isLoading: eventLoading } = useQuery({
     queryKey: ['event', eventId],
@@ -32,14 +33,30 @@ export default function EventDetail() {
     enabled: !!eventId,
   });
 
-  const { data: sets, isLoading: setsLoading, refetch: refetchSets } = useQuery<SetSummary[]>({
+  const { data: sets, isLoading: setsLoading } = useQuery<SetSummary[]>({
     queryKey: ['eventSets', eventId],
     queryFn: () => competitorApi.getEventSets(eventId!),
     enabled: !!eventId,
+    // Mantener datos previos en pantalla mientras se revalida (evita parpadeos)
+    placeholderData: (prev) => prev,
+    staleTime: 5_000,
     // Mantener la lista lo más sincronizada posible con start.gg sin spamear
     refetchInterval: 10_000,
     refetchOnWindowFocus: true,
   });
+
+  const refreshSets = async () => {
+    if (!eventId || isRefreshingSets) return;
+    setIsRefreshingSets(true);
+    try {
+      await queryClient.fetchQuery({
+        queryKey: ['eventSets', eventId],
+        queryFn: () => competitorApi.getEventSets(eventId, { fresh: 1 }),
+      });
+    } finally {
+      setIsRefreshingSets(false);
+    }
+  };
 
   // Verificación de admin por evento. El rol global 'admin' no implica ser
   // admin de ESTE torneo, así que se comprueba salvo que ya sea owner con rol
@@ -74,12 +91,7 @@ export default function EventDetail() {
         title: 'Set iniciado',
         description: 'El set ha sido marcado como en progreso',
       });
-      if (eventId) {
-        queryClient.fetchQuery({
-          queryKey: ['eventSets', eventId],
-          queryFn: () => competitorApi.getEventSets(eventId, { fresh: 1 }),
-        });
-      }
+      refreshSets();
       setPendingStartSetId(null);
     },
     onError: (error: unknown) => {
@@ -96,23 +108,42 @@ export default function EventDetail() {
 
   const resetSetMutation = useMutation({
     mutationFn: (setId: string | number) => adminApi.resetSet(setId),
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
         title: 'Set reiniciado',
-        description: 'El set ha sido reiniciado. Se han borrado los reportes y borradores.',
+        description: data?.startggReset === false
+          ? 'Reiniciado localmente, pero no se pudo reiniciar en start.gg.'
+          : 'El set se ha reiniciado también en start.gg. Vuelve a iniciarlo para definir el Best Of.',
+        variant: data?.startggReset === false ? 'destructive' : undefined,
       });
-      if (eventId) {
-        queryClient.fetchQuery({
-          queryKey: ['eventSets', eventId],
-          queryFn: () => competitorApi.getEventSets(eventId, { fresh: 1 }),
-        });
-      }
+      refreshSets();
     },
     onError: (error: unknown) => {
       const axErr = error as { response?: { data?: { message?: string; error?: string } } };
       const message = axErr?.response?.data?.message || axErr?.response?.data?.error || 'No se pudo reiniciar el set';
       toast({
         title: 'Error al reiniciar set',
+        description: message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const changeBestOfMutation = useMutation({
+    mutationFn: ({ setId, bestOf }: { setId: string | number; bestOf: 3 | 5 }) =>
+      adminApi.setBestOf(setId, bestOf),
+    onSuccess: (_data, variables) => {
+      toast({
+        title: 'Best Of actualizado',
+        description: `El set ahora es BO${variables.bestOf}`,
+      });
+      refreshSets();
+    },
+    onError: (error: unknown) => {
+      const axErr = error as { response?: { data?: { message?: string; error?: string } } };
+      const message = axErr?.response?.data?.message || axErr?.response?.data?.error || 'No se pudo cambiar el Best Of';
+      toast({
+        title: 'Error al cambiar Best Of',
         description: message,
         variant: 'destructive',
       });
@@ -135,19 +166,10 @@ export default function EventDetail() {
     }
   };
 
-  if (eventLoading) {
-    return (
-      <AppLayout>
-        <div className="space-y-4">
-          <Skeleton className="h-12 rounded-xl" />
-          <Skeleton className="h-24 rounded-xl" />
-          <Skeleton className="h-24 rounded-xl" />
-        </div>
-      </AppLayout>
-    );
-  }
-
-  if (!event) {
+  // Solo mostramos "no encontrado" cuando la consulta del evento ya terminó.
+  // No bloqueamos la lista de sets esperando al evento: ambas cargan en paralelo
+  // y los sets pueden mostrarse en cuanto estén disponibles.
+  if (!eventLoading && !event) {
     return (
       <AppLayout>
         <div className="gaming-card p-8 text-center">
@@ -187,22 +209,27 @@ export default function EventDetail() {
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div className="min-w-0 flex-1">
-            <p className="text-xs text-muted-foreground truncate">{event.tournamentName}</p>
-            <h1 className="font-display text-xl font-bold tracking-wider truncate">{event.name}</h1>
+            {event ? (
+              <>
+                <p className="text-xs text-muted-foreground truncate">{event.tournamentName}</p>
+                <h1 className="font-display text-xl font-bold tracking-wider truncate">{event.name}</h1>
+              </>
+            ) : (
+              <div className="space-y-1.5">
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="h-6 w-44" />
+              </div>
+            )}
           </div>
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => {
-              if (!eventId) return;
-              queryClient.fetchQuery({
-                queryKey: ['eventSets', eventId],
-                queryFn: () => competitorApi.getEventSets(eventId, { fresh: 1 }),
-              });
-            }}
+            onClick={refreshSets}
+            disabled={isRefreshingSets}
             className="shrink-0"
+            aria-label="Actualizar sets"
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className={cn('w-4 h-4', isRefreshingSets && 'animate-spin')} />
           </Button>
         </div>
 
@@ -271,7 +298,9 @@ export default function EventDetail() {
                       </Badge>
                     </div>
 
-                    <div className="text-xs text-muted-foreground">Bo{set.bestOf}</div>
+                    {!(isEventAdmin && set.status === 'in_progress' && !canEditRejected) && (
+                      <div className="text-xs text-muted-foreground">Bo{set.bestOf}</div>
+                    )}
 
                     {isEventAdmin ? (
                       <div className="space-y-2">
@@ -289,28 +318,69 @@ export default function EventDetail() {
                           </button>
                         )}
                         {set.status === 'in_progress' && !canEditRejected && (
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => navigate(`/admin/sets/${set.id}/live`)}
-                              className="flex-1 py-2.5 px-4 rounded-lg border border-border text-sm font-medium flex items-center justify-center gap-2 hover:border-primary/50 transition-all active:scale-[0.98]"
-                            >
-                              <Eye className="w-4 h-4" /> Ver en vivo
-                            </button>
-                            <button
-                              onClick={() => {
-                                if (confirm('¿Reiniciar este set? Se borrarán reportes y borradores.')) {
-                                  resetSetMutation.mutate(set.id);
+                          <div className="space-y-2">
+                            {/* Acción principal: reportar si el admin juega este set, si no, monitorizar */}
+                            {userOwnsSet ? (
+                              <button
+                                onClick={() => navigate(`/sets/${set.id}?mode=player`)}
+                                className="w-full py-2.5 px-4 rounded-lg bg-gradient-primary text-white text-sm font-semibold flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition-all"
+                              >
+                                <Swords className="w-4 h-4" /> Reportar Set
+                              </button>
+                            ) : (
+                              <div className="space-y-2">
+                                <button
+                                  onClick={() => navigate(`/sets/${set.id}/spectate`)}
+                                  className="w-full py-2.5 px-4 rounded-lg border border-border text-sm font-medium flex items-center justify-center gap-2 hover:border-primary/50 transition-all active:scale-[0.98]"
+                                >
+                                  <Eye className="w-4 h-4" /> Ver en vivo
+                                </button>
+                                <button
+                                  onClick={() => navigate(`/admin/sets/${set.id}/live`)}
+                                  className="w-full py-2 px-4 rounded-lg text-xs text-muted-foreground hover:text-foreground transition-all active:scale-[0.98]"
+                                >
+                                  Monitor TO
+                                </button>
+                              </div>
+                            )}
+                            {/* Controles secundarios: cambiar Best Of y reiniciar */}
+                            <div className="flex items-center gap-2">
+                              <Select
+                                value={String(set.bestOf)}
+                                onValueChange={(value) =>
+                                  changeBestOfMutation.mutate({ setId: set.id, bestOf: value === '5' ? 5 : 3 })
                                 }
-                              }}
-                              disabled={resetSetMutation.isPending}
-                              className="py-2.5 px-3 rounded-lg border border-destructive/30 text-destructive text-sm font-medium flex items-center justify-center gap-1.5 hover:bg-destructive/10 transition-all active:scale-[0.98] disabled:opacity-50"
-                            >
-                              {resetSetMutation.isPending ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <RotateCcw className="w-4 h-4" />
-                              )}
-                            </button>
+                                disabled={changeBestOfMutation.isPending}
+                              >
+                                <SelectTrigger className="flex-1 h-10">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="3">BO3</SelectItem>
+                                  <SelectItem value="5">BO5</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <button
+                                onClick={() => {
+                                  if (
+                                    confirm(
+                                      '¿Reiniciar este set por completo? Se reiniciará también en start.gg y se borrarán los reportes y borradores.',
+                                    )
+                                  ) {
+                                    resetSetMutation.mutate(set.id);
+                                  }
+                                }}
+                                disabled={resetSetMutation.isPending}
+                                className="py-2.5 px-3 h-10 rounded-lg border border-destructive/30 text-destructive text-sm font-medium flex items-center justify-center gap-1.5 hover:bg-destructive/10 transition-all active:scale-[0.98] disabled:opacity-50"
+                                aria-label="Reiniciar set"
+                              >
+                                {resetSetMutation.isPending ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <RotateCcw className="w-4 h-4" />
+                                )}
+                              </button>
+                            </div>
                           </div>
                         )}
                         {canEditRejected && userOwnsSet && (

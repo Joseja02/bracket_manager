@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Calendar, Swords, Play, ShieldCheck, RefreshCw, ChevronRight } from 'lucide-react';
@@ -13,6 +13,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const { data: events, isLoading: eventsLoading, refetch } = useQuery({
     queryKey: ['myEvents'],
@@ -36,6 +37,16 @@ export default function Dashboard() {
     enabled: !!isAdmin && !!adminEventId,
   });
 
+  const handleRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   return (
     <AppLayout>
       <div className="space-y-6">
@@ -52,10 +63,12 @@ export default function Dashboard() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => refetch()}
+            onClick={handleRefresh}
+            disabled={isRefreshing}
             className="shrink-0"
+            aria-label="Actualizar eventos"
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
           </Button>
         </div>
 

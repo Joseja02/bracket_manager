@@ -215,6 +215,20 @@ class EventController extends Controller
         $startggUserId = (string) $user->startgg_user_id;
         $promoted = false;
 
+        // Cache del resultado por usuario+evento para evitar 3 llamadas a
+        // start.gg en cada recarga. Es lo que provocaba la lentitud al cargar
+        // los sets (las peticiones se serializan en el server de desarrollo).
+        $resultCacheKey = "event_admincheck_{$eventId}_user_{$user->id}";
+        $cachedResult = Cache::get($resultCacheKey);
+        if (is_array($cachedResult) && array_key_exists('isAdmin', $cachedResult)) {
+            return response()->json([
+                'isAdmin' => $cachedResult['isAdmin'],
+                'slug' => $cachedResult['slug'] ?? null,
+                'promoted' => false,
+                'cached' => true,
+            ]);
+        }
+
         // Permitir que el frontend pase el slug para evitar una consulta extra
         $slug = $request->query('tournamentSlug');
 
@@ -332,6 +346,12 @@ class EventController extends Controller
             'is_admin_via_flag' => $isAdminViaFlag,
             'promoted' => $promoted,
         ]);
+
+        // Guardar resultado en cache 5 min para acelerar recargas posteriores
+        Cache::put($resultCacheKey, [
+            'isAdmin' => $isAdmin,
+            'slug' => $slug,
+        ], now()->addMinutes(5));
 
         return response()->json([
             'isAdmin' => $isAdmin,

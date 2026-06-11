@@ -665,6 +665,45 @@ class StartggClient
   }
 
   /**
+   * Reiniciar un set en start.gg (vuelve al estado inicial / not_started).
+   * Permite que un admin re-inicie el set y re-especifique el Best Of.
+   */
+  public function resetSet(User $user, $setId): array
+  {
+    $mutation = <<<'GQL'
+        mutation ResetSet($setId: ID!) {
+          resetSet(setId: $setId) {
+            id
+            state
+          }
+        }
+        GQL;
+
+    $data = $this->query($user, $mutation, ['setId' => $setId]);
+    $result = data_get($data, 'resetSet');
+
+    if (empty($result)) {
+      $raw = $this->debugQuery($user, $mutation, ['setId' => $setId]);
+
+      $errMsg = 'Unknown error';
+      if (!empty($raw['json']['errors'])) {
+        $err = $raw['json']['errors'][0] ?? null;
+        $errMsg = $err['message'] ?? json_encode($raw['json']['errors']);
+        Log::warning('startgg resetSet errors', [
+          'set_id' => $setId,
+          'errors' => $raw['json']['errors'],
+        ]);
+      } else {
+        Log::warning('startgg resetSet empty result', ['set_id' => $setId, 'raw' => $raw]);
+      }
+
+      throw new RuntimeException('Failed to reset set: ' . $errMsg);
+    }
+
+    return is_array($result) ? $result : (array) $result;
+  }
+
+  /**
    * Reportar resultado de un set
    */
   public function reportSet(User $user, $setId, $winnerId, Report $report): array

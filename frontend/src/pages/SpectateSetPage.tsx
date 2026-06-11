@@ -1,4 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layouts/AppLayout';
 import { ScoreHeader } from '@/components/set/ScoreHeader';
@@ -30,6 +31,7 @@ function getDisplayGames(data: SetSpectateResponse): GameRecord[] {
 export default function SpectateSetPage() {
   const { setId } = useParams<{ setId: string }>();
   const navigate = useNavigate();
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const { data, isLoading, isError, error, refetch, dataUpdatedAt } = useQuery({
     queryKey: ['setSpectate', setId],
@@ -47,6 +49,16 @@ export default function SpectateSetPage() {
   const axiosError = error as { response?: { status?: number; data?: SetSpectateResponse } } | undefined;
   const unavailable = axiosError?.response?.status === 409 ? axiosError.response.data : null;
   const spectate = data ?? (unavailable?.available === false ? unavailable : null);
+
+  const handleRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -109,8 +121,15 @@ export default function SpectateSetPage() {
             <p className="text-xs text-muted-foreground truncate">{setDetail.eventName}</p>
             <p className="text-sm font-semibold truncate">{setDetail.round}</p>
           </div>
-          <Button variant="ghost" size="icon" onClick={() => refetch()} className="shrink-0">
-            <RefreshCw className="w-4 h-4" />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="shrink-0"
+            aria-label="Actualizar"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
           </Button>
         </div>
 

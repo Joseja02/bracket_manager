@@ -47,8 +47,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Vista en Vivo para Admins
         Route::get('/sets/{setId}/live', [SetController::class, 'adminLiveState']);
-        // Reiniciar set (borrar reportes, borradores, estado)
+        // Reiniciar set (borrar reportes, borradores, estado + reset en start.gg)
         Route::post('/sets/{setId}/reset', [SetController::class, 'resetSet']);
+        // Cambiar el Best Of de un set en progreso sin perder el progreso
+        Route::post('/sets/{setId}/best-of', [SetController::class, 'setBestOf']);
     });
 });
 
