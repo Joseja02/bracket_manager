@@ -24,6 +24,9 @@ import { toast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import type { GameRecord } from '@/types';
+import { slugToLabel, resolveCharacterSlug } from '@/lib/characters';
+
+const assetBase = import.meta.env.BASE_URL;
 
 export default function AdminReportDetail() {
   const { reportId } = useParams<{ reportId: string }>();
@@ -283,19 +286,41 @@ export default function AdminReportDetail() {
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div className={cn(
-                    'p-3 rounded-lg text-center border',
+                    'p-3 rounded-lg text-center border space-y-1.5',
                     game.winner === 'p1' ? 'bg-primary/10 border-primary/30' : 'bg-gradient-surface border-border/20'
                   )}>
-                    <p className="text-xs text-muted-foreground mb-0.5">{report.p1.name}</p>
-                    <p className="font-semibold">{game.characterP1 || '-'}</p>
+                    <p className="text-xs text-muted-foreground">{report.p1.name}</p>
+                    {game.characterP1 ? (
+                      <div className="flex flex-col items-center gap-1">
+                        <img
+                          src={`${assetBase}stock_icons/${resolveCharacterSlug(game.characterP1)}.png`}
+                          alt={slugToLabel(game.characterP1)}
+                          className="h-10 w-10 object-contain"
+                        />
+                        <p className="font-semibold text-xs leading-tight">{slugToLabel(game.characterP1)}</p>
+                      </div>
+                    ) : (
+                      <p className="font-semibold">-</p>
+                    )}
                     <p className="text-xs text-muted-foreground">{game.stocksP1 ?? '?'} stocks</p>
                   </div>
                   <div className={cn(
-                    'p-3 rounded-lg text-center border',
+                    'p-3 rounded-lg text-center border space-y-1.5',
                     game.winner === 'p2' ? 'bg-secondary/10 border-secondary/30' : 'bg-gradient-surface border-border/20'
                   )}>
-                    <p className="text-xs text-muted-foreground mb-0.5">{report.p2.name}</p>
-                    <p className="font-semibold">{game.characterP2 || '-'}</p>
+                    <p className="text-xs text-muted-foreground">{report.p2.name}</p>
+                    {game.characterP2 ? (
+                      <div className="flex flex-col items-center gap-1">
+                        <img
+                          src={`${assetBase}stock_icons/${resolveCharacterSlug(game.characterP2)}.png`}
+                          alt={slugToLabel(game.characterP2)}
+                          className="h-10 w-10 object-contain"
+                        />
+                        <p className="font-semibold text-xs leading-tight">{slugToLabel(game.characterP2)}</p>
+                      </div>
+                    ) : (
+                      <p className="font-semibold">-</p>
+                    )}
                     <p className="text-xs text-muted-foreground">{game.stocksP2 ?? '?'} stocks</p>
                   </div>
                 </div>
