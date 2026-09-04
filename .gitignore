@@ -12,7 +12,7 @@ frontend/.env.*
 !README.md
 AGENTS.md
 .cursor/*
-.docs/*
+docs/*
 
 # Dependencies and builds
 node_modules/
@@ -32,3 +32,5 @@ deploy-dev.sh
 docker-compose.yml
 
 backend/tests/load/k6-stress.js
+
+

@@ -448,7 +448,29 @@ class SetController extends Controller
         ]);
 
         // Obtener set detail para saber quién es p1/p2
-        $setDetail = $this->client->getSetDetail($user, $setId);
+        try {
+            $setDetail = $this->client->getSetDetail($user, $setId);
+        } catch (\RuntimeException $e) {
+            Log::warning('Start.gg error fetching set detail for RPS', [
+                'set_id' => $setId,
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return StartggErrorClassifier::toJsonResponse($e->getMessage(), 'Failed to fetch set detail');
+        } catch (\Throwable $e) {
+            Log::error('Error fetching set detail for RPS', [
+                'set_id' => $setId,
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'error' => 'Failed to fetch set detail',
+                'message' => $e->getMessage(),
+                'code' => StartggErrorClassifier::UNKNOWN,
+            ], 500);
+        }
 
         try {
             $state = SetState::firstOrCreate(
@@ -514,7 +536,30 @@ class SetController extends Controller
             'stage' => 'required|string',
         ]);
 
-        $setDetail = $this->client->getSetDetail($user, $setId);
+        try {
+            $setDetail = $this->client->getSetDetail($user, $setId);
+        } catch (\RuntimeException $e) {
+            Log::warning('Start.gg error fetching set detail for bans', [
+                'set_id' => $setId,
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return StartggErrorClassifier::toJsonResponse($e->getMessage(), 'Failed to fetch set detail');
+        } catch (\Throwable $e) {
+            Log::error('Error fetching set detail for bans', [
+                'set_id' => $setId,
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'error' => 'Failed to fetch set detail',
+                'message' => $e->getMessage(),
+                'code' => StartggErrorClassifier::UNKNOWN,
+            ], 500);
+        }
+
         try {
             $state = SetState::firstOrCreate(
                 ['set_id' => $setId],

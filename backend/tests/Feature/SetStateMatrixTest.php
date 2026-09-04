@@ -89,6 +89,27 @@ class SetStateMatrixTest extends TestCase
             ->assertJsonPath('error', 'RPS phase not active');
     }
 
+    public function test_rps_returns_json_when_set_detail_lookup_fails(): void
+    {
+        $user = User::factory()->create([
+            'startgg_user_id' => '55',
+            'role' => 'competitor',
+        ]);
+        Sanctum::actingAs($user);
+
+        $this->mock(StartggClient::class, function ($mock) {
+            $mock->shouldReceive('getSetDetail')
+                ->once()
+                ->andThrow(new \RuntimeException('Set not found'));
+        });
+
+        $this->postJson('/api/sets/missing-set/rps', ['choice' => 'rock'])
+            ->assertStatus(500)
+            ->assertJsonPath('error', 'Failed to fetch set detail')
+            ->assertJsonPath('message', 'Set not found')
+            ->assertJsonPath('code', 'unknown');
+    }
+
     public function test_ban_rejects_when_state_is_not_in_banning_phase(): void
     {
         $user = User::factory()->create([
@@ -120,6 +141,27 @@ class SetStateMatrixTest extends TestCase
         $this->postJson('/api/sets/set-1/bans', ['stage' => 'Battlefield'])
             ->assertStatus(422)
             ->assertJsonPath('error', 'Banning phase not active');
+    }
+
+    public function test_ban_returns_json_when_set_detail_lookup_fails(): void
+    {
+        $user = User::factory()->create([
+            'startgg_user_id' => '55',
+            'role' => 'competitor',
+        ]);
+        Sanctum::actingAs($user);
+
+        $this->mock(StartggClient::class, function ($mock) {
+            $mock->shouldReceive('getSetDetail')
+                ->once()
+                ->andThrow(new \RuntimeException('Set not found'));
+        });
+
+        $this->postJson('/api/sets/missing-set/bans', ['stage' => 'Battlefield'])
+            ->assertStatus(500)
+            ->assertJsonPath('error', 'Failed to fetch set detail')
+            ->assertJsonPath('message', 'Set not found')
+            ->assertJsonPath('code', 'unknown');
     }
 
     public function test_rps_moves_to_banning_after_both_players_choose(): void
