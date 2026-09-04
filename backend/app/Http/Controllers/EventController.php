@@ -74,6 +74,12 @@ class EventController extends Controller
                 $set['bestOf'] = (int) $state->best_of;
             }
 
+            // start.gg es la fuente de verdad: si el set vuelve a estar sin
+            // iniciar, un reporte local antiguo no debe ocultarlo.
+            if (($set['status'] ?? null) === 'not_started') {
+                return $set;
+            }
+
             if ($report) {
                 $set['reportStatus'] = $report->status;
             }

@@ -99,40 +99,50 @@ class SetController extends Controller
         $bestOf = (int) ($payload['bestOf'] ?? 3);
         
         try {
-            // eventId desde el cliente evita getSetDetail (~5s). start.gg sigue
-            // autorizando la mutación; el check local es un gate de UX.
-            $eventId = $payload['eventId'] ?? null;
-            $setStatus = null;
-            if ($eventId === null || $eventId === '') {
+            $requestedEventId = $payload['eventId'] ?? null;
+
+            if ($requestedEventId !== null && $requestedEventId !== '') {
+                if (!$this->isEventAdmin($user, $requestedEventId)) {
+                    return response()->json([
+                        'error' => 'Unauthorized',
+                        'message' => 'Solo los administradores del torneo pueden iniciar sets',
+                    ], 403);
+                }
+
+                // Los preview_* no siempre están disponibles mediante set(id:).
+                // Verificar contra la lista live del evento vincula de forma segura
+                // el eventId recibido con el set antes de modificar datos locales.
+                $eventSets = $this->client->getEventSets($user, $requestedEventId);
+                $setDetail = collect($eventSets)->first(
+                    fn (array $candidate) => (string) ($candidate['id'] ?? '') === (string) $setId
+                );
+
+                if (!$setDetail
+                    || (string) ($setDetail['eventId'] ?? $requestedEventId) !== (string) $requestedEventId) {
+                    return response()->json([
+                        'error' => 'Tournament mismatch',
+                        'message' => 'El set no pertenece al evento indicado.',
+                        'code' => StartggErrorClassifier::TOURNAMENT_MISMATCH,
+                    ], 409);
+                }
+
+                $eventId = $requestedEventId;
+            } else {
                 $setDetail = $this->client->getSetDetail($user, $setId);
                 $eventId = $setDetail['eventId'] ?? null;
-                $setStatus = $setDetail['status'] ?? null;
-            }
 
-            if (!$eventId || !$this->isEventAdmin($user, $eventId)) {
-                return response()->json([
-                    'error' => 'Unauthorized',
-                    'message' => 'Solo los administradores del torneo pueden iniciar sets',
-                ], 403);
-            }
-
-            $shouldResetLocal = $setStatus === 'not_started'
-                || ($setStatus === null && !SetState::where('set_id', $setId)->exists());
-
-            if ($shouldResetLocal) {
-                DB::beginTransaction();
-                try {
-                    Report::where('set_id', $setId)->delete();
-                    SetDraft::where('set_id', $setId)->delete();
-                    SetState::where('set_id', $setId)->delete();
-                    DB::commit();
-                } catch (\Throwable $e) {
-                    DB::rollBack();
-                    throw $e;
+                if (!$eventId || !$this->isEventAdmin($user, $eventId)) {
+                    return response()->json([
+                        'error' => 'Unauthorized',
+                        'message' => 'Solo los administradores del torneo pueden iniciar sets',
+                    ], 403);
                 }
             }
 
-            // Única ida a start.gg en el camino rápido (eventId + admin cacheado).
+            $shouldResetLocal = ($setDetail['status'] ?? null) === 'not_started';
+
+            // start.gg debe aceptar la mutación antes de borrar cualquier estado
+            // local. Así un error externo nunca destruye reportes o drafts.
             $startedAt = microtime(true);
             $result = $this->client->markSetInProgress($user, $setId);
             Log::info('Set start mutation timing', [
@@ -142,14 +152,22 @@ class SetController extends Controller
                 'had_event_id' => array_key_exists('eventId', $payload) && $payload['eventId'] !== null && $payload['eventId'] !== '',
             ]);
 
-            $state = SetState::firstOrCreate(
-                ['set_id' => $setId],
-                ['bans' => [], 'phase' => 'rps']
-            );
-            $state->best_of = $bestOf;
-            $state->save();
+            DB::transaction(function () use ($setId, $bestOf, $shouldResetLocal) {
+                if ($shouldResetLocal) {
+                    Report::where('set_id', $setId)->delete();
+                    SetDraft::where('set_id', $setId)->delete();
+                    SetState::where('set_id', $setId)->delete();
+                }
 
-            $this->invalidateSetCaches($setId, null, null, false);
+                $state = SetState::firstOrCreate(
+                    ['set_id' => $setId],
+                    ['bans' => [], 'phase' => 'rps']
+                );
+                $state->best_of = $bestOf;
+                $state->save();
+            });
+
+            $this->invalidateSetCaches($setId, $eventId, $user->id, false);
 
             return response()->json([
                 'message' => 'Set marked as in progress',

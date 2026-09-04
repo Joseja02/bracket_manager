@@ -21,7 +21,8 @@ class ReportController extends Controller
 
     /**
      * GET /api/admin/reports
-     * eventId is optional. Without it, all reports (admin role). With it, filter + event admin check.
+     * eventId is optional. Without it, only reports from events administered
+     * by the current user are returned.
      */
     public function index(Request $request)
     {
@@ -35,6 +36,20 @@ class ReportController extends Controller
                 return response()->json(['error' => 'Forbidden. Not an admin of this event.'], 403);
             }
             $query->where('event_id', $eventId);
+        } else {
+            $eventQuery = Report::query();
+            if ($request->has('status')) {
+                $eventQuery->where('status', $request->input('status'));
+            }
+
+            $authorizedEventIds = $eventQuery
+                ->distinct()
+                ->pluck('event_id')
+                ->filter(fn ($candidateEventId) => $this->isEventAdmin($user, $candidateEventId))
+                ->values()
+                ->all();
+
+            $query->whereIn('event_id', $authorizedEventIds);
         }
 
         // Filtrar por estado

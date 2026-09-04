@@ -7,6 +7,7 @@ use App\Models\Report;
 use App\Models\User;
 use App\Services\StartggClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -14,13 +15,17 @@ class AdminReportFlowTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function createPendingReport(User $user): Report
+    private function createPendingReport(
+        User $user,
+        int $eventId = 10,
+        string $setId = 'set-1',
+    ): Report
     {
         $report = Report::create([
             'user_id' => $user->id,
-            'event_id' => 10,
-            'event_name' => 'Event',
-            'set_id' => 'set-1',
+            'event_id' => $eventId,
+            'event_name' => "Event {$eventId}",
+            'set_id' => $setId,
             'round' => 'Winners R1',
             'best_of' => 3,
             'p1_entrant_id' => 111,
@@ -43,6 +48,24 @@ class AdminReportFlowTest extends TestCase
         ]);
 
         return $report;
+    }
+
+    public function test_global_report_list_only_includes_administered_events(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin', 'startgg_user_id' => '55']);
+        $reporter = User::factory()->create(['role' => 'competitor']);
+        $authorizedReport = $this->createPendingReport($reporter, 10, 'set-10');
+        $foreignReport = $this->createPendingReport($reporter, 20, 'set-20');
+
+        Sanctum::actingAs($admin);
+        Cache::put("event_isadmin_10_user_{$admin->id}", true, 600);
+        Cache::put("event_isadmin_20_user_{$admin->id}", false, 600);
+
+        $this->getJson('/api/admin/reports?status=pending')
+            ->assertOk()
+            ->assertJsonCount(1)
+            ->assertJsonFragment(['id' => $authorizedReport->id])
+            ->assertJsonMissing(['id' => $foreignReport->id]);
     }
 
     public function test_admin_routes_require_admin_role(): void

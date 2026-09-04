@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Report;
+use App\Models\SetDraft;
+use App\Models\SetState;
 use App\Models\User;
 use App\Services\StartggClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -181,6 +183,16 @@ class SetFlowTest extends TestCase
 
         $this->mock(StartggClient::class, function ($mock) {
             $mock->shouldNotReceive('getSetDetail');
+            $mock->shouldReceive('getEventSets')->once()->with(
+                \Mockery::type(User::class),
+                10
+            )->andReturn([
+                [
+                    'id' => 'preview_3136342_1_31',
+                    'eventId' => 10,
+                    'status' => 'not_started',
+                ],
+            ]);
             $mock->shouldReceive('markSetInProgress')
                 ->once()
                 ->andReturn(['id' => 'preview_3136342_1_31', 'state' => 2]);
@@ -191,7 +203,7 @@ class SetFlowTest extends TestCase
             ->assertJsonPath('message', 'Set marked as in progress');
     }
 
-    public function test_start_set_with_event_id_skips_set_detail_and_keeps_admin_cache(): void
+    public function test_start_set_with_event_id_verifies_membership_and_keeps_admin_cache(): void
     {
         $user = User::factory()->create([
             'startgg_user_id' => '55',
@@ -210,6 +222,16 @@ class SetFlowTest extends TestCase
             $mock->shouldNotReceive('getSetDetail');
             $mock->shouldNotReceive('getEvent');
             $mock->shouldNotReceive('getTournamentAdminInfo');
+            $mock->shouldReceive('getEventSets')->once()->with(
+                \Mockery::type(User::class),
+                10
+            )->andReturn([
+                [
+                    'id' => 'set-1',
+                    'eventId' => 10,
+                    'status' => 'not_started',
+                ],
+            ]);
             $mock->shouldReceive('markSetInProgress')->once()->andReturn(['id' => 'set-1', 'state' => 2]);
         });
 
@@ -222,6 +244,113 @@ class SetFlowTest extends TestCase
         $this->assertSame(3, $cached[0]['bestOf']);
         $this->assertSame('not_started', $cached[1]['status']);
         $this->assertTrue(Cache::get("event_isadmin_10_user_{$user->id}"));
+    }
+
+    public function test_start_set_resets_stale_local_state_after_startgg_accepts(): void
+    {
+        $user = User::factory()->create([
+            'startgg_user_id' => '55',
+            'role' => 'admin',
+        ]);
+        Sanctum::actingAs($user);
+
+        Cache::put("event_isadmin_10_user_{$user->id}", true, 600);
+        SetState::create([
+            'set_id' => 'set-1',
+            'phase' => 'picked',
+            'best_of' => 5,
+            'bans' => ['Battlefield'],
+        ]);
+        SetDraft::create([
+            'set_id' => 'set-1',
+            'user_id' => $user->id,
+            'data' => ['games' => [['index' => 1]]],
+            'status' => 'draft',
+        ]);
+
+        $this->mock(StartggClient::class, function ($mock) {
+            $mock->shouldReceive('getEventSets')->once()->andReturn([
+                ['id' => 'set-1', 'eventId' => 10, 'status' => 'not_started'],
+            ]);
+            $mock->shouldReceive('markSetInProgress')->once()->andReturn(['id' => 'set-1', 'state' => 2]);
+        });
+
+        $this->postJson('/api/sets/set-1/start', ['bestOf' => 3, 'eventId' => 10])
+            ->assertOk();
+
+        $this->assertDatabaseMissing('set_drafts', ['set_id' => 'set-1']);
+        $this->assertDatabaseHas('set_states', [
+            'set_id' => 'set-1',
+            'phase' => 'rps',
+            'best_of' => 3,
+        ]);
+    }
+
+    public function test_start_set_rejects_event_mismatch_without_deleting_local_data(): void
+    {
+        $user = User::factory()->create([
+            'startgg_user_id' => '55',
+            'role' => 'admin',
+        ]);
+        Sanctum::actingAs($user);
+
+        Cache::put("event_isadmin_10_user_{$user->id}", true, 600);
+        SetState::create([
+            'set_id' => 'set-1',
+            'phase' => 'banning',
+            'best_of' => 5,
+            'bans' => [],
+        ]);
+        SetDraft::create([
+            'set_id' => 'set-1',
+            'user_id' => $user->id,
+            'data' => ['games' => []],
+            'status' => 'draft',
+        ]);
+
+        $this->mock(StartggClient::class, function ($mock) {
+            $mock->shouldReceive('getEventSets')->once()->andReturn([
+                ['id' => 'another-set', 'eventId' => 10, 'status' => 'not_started'],
+            ]);
+            $mock->shouldNotReceive('markSetInProgress');
+        });
+
+        $this->postJson('/api/sets/set-1/start', ['bestOf' => 3, 'eventId' => 10])
+            ->assertStatus(409)
+            ->assertJsonPath('code', 'tournament_mismatch');
+
+        $this->assertDatabaseHas('set_states', ['set_id' => 'set-1', 'phase' => 'banning']);
+        $this->assertDatabaseHas('set_drafts', ['set_id' => 'set-1', 'user_id' => $user->id]);
+    }
+
+    public function test_startgg_failure_does_not_delete_local_data(): void
+    {
+        $user = User::factory()->create([
+            'startgg_user_id' => '55',
+            'role' => 'admin',
+        ]);
+        Sanctum::actingAs($user);
+
+        Cache::put("event_isadmin_10_user_{$user->id}", true, 600);
+        SetState::create([
+            'set_id' => 'set-1',
+            'phase' => 'banning',
+            'best_of' => 5,
+            'bans' => [],
+        ]);
+
+        $this->mock(StartggClient::class, function ($mock) {
+            $mock->shouldReceive('getEventSets')->once()->andReturn([
+                ['id' => 'set-1', 'eventId' => 10, 'status' => 'not_started'],
+            ]);
+            $mock->shouldReceive('markSetInProgress')->once()
+                ->andThrow(new \RuntimeException('start.gg unavailable'));
+        });
+
+        $this->postJson('/api/sets/set-1/start', ['bestOf' => 3, 'eventId' => 10])
+            ->assertStatus(500);
+
+        $this->assertDatabaseHas('set_states', ['set_id' => 'set-1', 'phase' => 'banning']);
     }
 
     public function test_submit_report_rejects_duplicate_pending_report(): void
