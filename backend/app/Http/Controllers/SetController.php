@@ -20,6 +20,7 @@ class SetController extends Controller
 {
     use \App\Http\Concerns\ChecksEventAdmin;
     use \App\Http\Concerns\InvalidatesSetCaches;
+    use \App\Http\Concerns\TracksSetEventBindings;
 
     public function __construct(
         private StartggClient $client,
@@ -109,21 +110,66 @@ class SetController extends Controller
                     ], 403);
                 }
 
-                // Los preview_* no siempre están disponibles mediante set(id:).
-                // Verificar contra la lista live del evento vincula de forma segura
-                // el eventId recibido con el set antes de modificar datos locales.
-                $eventSets = $this->client->getEventSets($user, $requestedEventId);
-                $setDetail = collect($eventSets)->first(
-                    fn (array $candidate) => (string) ($candidate['id'] ?? '') === (string) $setId
-                );
-
-                if (!$setDetail
-                    || (string) ($setDetail['eventId'] ?? $requestedEventId) !== (string) $requestedEventId) {
+                $binding = $this->getSetEventBinding($setId);
+                if ($binding
+                    && (string) $binding['eventId'] !== (string) $requestedEventId) {
                     return response()->json([
                         'error' => 'Tournament mismatch',
                         'message' => 'El set no pertenece al evento indicado.',
                         'code' => StartggErrorClassifier::TOURNAMENT_MISMATCH,
                     ], 409);
+                }
+
+                if ($binding) {
+                    // Relación observada recientemente en GET /events/{id}/sets.
+                    // Permite iniciar preview_* aunque start.gg atraviese su breve
+                    // ventana de consistencia eventual y devuelva una lista vacía.
+                    $setDetail = [
+                        'id' => $setId,
+                        'eventId' => $binding['eventId'],
+                        'status' => $binding['status'] ?? null,
+                    ];
+                } else {
+                    $eventSets = $this->client->getEventSets($user, $requestedEventId);
+                    $setDetail = collect($eventSets)->first(
+                        fn (array $candidate) => (string) ($candidate['id'] ?? '') === (string) $setId
+                    );
+
+                    if ($setDetail) {
+                        $this->rememberSetEventBindings([$setDetail], $requestedEventId);
+                    } elseif (empty($eventSets)) {
+                        // Una lista vacía no demuestra que el set pertenezca a
+                        // otro evento: start.gg puede estar iniciando la phase.
+                        // Para IDs normales intentamos la consulta individual.
+                        if (!str_starts_with((string) $setId, 'preview_')) {
+                            try {
+                                $directSet = $this->client->getSetDetail($user, $setId);
+                                if ((string) ($directSet['eventId'] ?? '') === (string) $requestedEventId) {
+                                    $setDetail = $directSet;
+                                }
+                            } catch (\Throwable $lookupError) {
+                                Log::warning('Direct set lookup failed after empty event list', [
+                                    'set_id' => $setId,
+                                    'event_id' => $requestedEventId,
+                                    'error' => $lookupError->getMessage(),
+                                ]);
+                            }
+                        }
+
+                        if (!$setDetail) {
+                            return response()->json([
+                                'error' => 'Set lookup temporarily unavailable',
+                                'message' => 'start.gg aún está actualizando los sets del evento. Inténtalo de nuevo.',
+                                'code' => 'set_lookup_unavailable',
+                            ], 503);
+                        }
+                    } else {
+                        return response()->json([
+                            'error' => 'Tournament mismatch',
+                            'message' => 'El set no pertenece al evento indicado.',
+                            'code' => StartggErrorClassifier::TOURNAMENT_MISMATCH,
+                        ], 409);
+                    }
                 }
 
                 $eventId = $requestedEventId;
@@ -168,6 +214,7 @@ class SetController extends Controller
             });
 
             $this->invalidateSetCaches($setId, $eventId, $user->id, false);
+            $this->forgetSetEventBinding($setId);
 
             return response()->json([
                 'message' => 'Set marked as in progress',

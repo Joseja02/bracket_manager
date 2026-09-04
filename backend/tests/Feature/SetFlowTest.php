@@ -203,6 +203,63 @@ class SetFlowTest extends TestCase
             ->assertJsonPath('message', 'Set marked as in progress');
     }
 
+    public function test_recent_live_binding_allows_preview_start_without_second_list_lookup(): void
+    {
+        $user = User::factory()->create([
+            'startgg_user_id' => '55',
+            'role' => 'admin',
+        ]);
+        Sanctum::actingAs($user);
+
+        Cache::put("event_admincheck_10_user_{$user->id}", ['isAdmin' => true, 'slug' => 'event-slug'], 600);
+        Cache::put("event_isadmin_10_user_{$user->id}", true, 600);
+
+        $this->mock(StartggClient::class, function ($mock) {
+            $mock->shouldReceive('getEventSets')->once()->andReturn([
+                [
+                    'id' => 'preview_bootstrap_1',
+                    'eventId' => 10,
+                    'eventName' => 'Event',
+                    'status' => 'not_started',
+                    'bestOf' => 3,
+                    'p1' => ['userId' => null, 'entrantId' => 111, 'name' => 'Player 1'],
+                    'p2' => ['userId' => null, 'entrantId' => 222, 'name' => 'Player 2'],
+                ],
+            ]);
+            $mock->shouldReceive('markSetInProgress')->once()
+                ->andReturn(['id' => 'preview_bootstrap_1', 'state' => 2]);
+        });
+
+        $this->getJson('/api/events/10/sets')
+            ->assertOk()
+            ->assertJsonPath('0.id', 'preview_bootstrap_1');
+
+        $this->postJson('/api/sets/preview_bootstrap_1/start', ['bestOf' => 3, 'eventId' => 10])
+            ->assertOk()
+            ->assertJsonPath('message', 'Set marked as in progress');
+    }
+
+    public function test_empty_live_list_without_binding_returns_transient_error_for_preview(): void
+    {
+        $user = User::factory()->create([
+            'startgg_user_id' => '55',
+            'role' => 'admin',
+        ]);
+        Sanctum::actingAs($user);
+
+        Cache::put("event_isadmin_10_user_{$user->id}", true, 600);
+
+        $this->mock(StartggClient::class, function ($mock) {
+            $mock->shouldReceive('getEventSets')->once()->andReturn([]);
+            $mock->shouldNotReceive('getSetDetail');
+            $mock->shouldNotReceive('markSetInProgress');
+        });
+
+        $this->postJson('/api/sets/preview_missing_binding/start', ['bestOf' => 3, 'eventId' => 10])
+            ->assertStatus(503)
+            ->assertJsonPath('code', 'set_lookup_unavailable');
+    }
+
     public function test_start_set_with_event_id_verifies_membership_and_keeps_admin_cache(): void
     {
         $user = User::factory()->create([

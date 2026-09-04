@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Log;
 class EventController extends Controller
 {
     use \App\Http\Concerns\ChecksEventAdmin;
+    use \App\Http\Concerns\TracksSetEventBindings;
 
     public function __construct(
         private StartggClient $client,
@@ -39,6 +40,7 @@ class EventController extends Controller
                 'mine' => $mine,
                 'status' => $statusFilter,
             ]);
+            $this->rememberSetEventBindings($sets, $eventId);
 
             return response()->json($this->enrichDashboardSets($sets, $user, $mine, $statusFilter));
         } catch (\Throwable $e) {
