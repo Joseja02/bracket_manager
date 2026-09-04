@@ -13,11 +13,19 @@ use Illuminate\Support\Facades\Log;
 
 class EventController extends Controller
 {
-    public function __construct(private StartggClient $client, private StartggAppClient $appClient) {}
+    use \App\Http\Concerns\ChecksEventAdmin;
+
+    public function __construct(
+        private StartggClient $client,
+        private StartggAppClient $appClient,
+    ) {}
 
     /**
      * Obtener los sets de un evento
      * GET /api/events/{eventId}/sets
+     *
+     * El estado de cada set (not_started / in_progress, IDs, jugadores) sale
+     * siempre de start.gg. SetState solo aporta Best Of local.
      */
     public function getSets(Request $request, $eventId)
     {
@@ -25,136 +33,14 @@ class EventController extends Controller
         
         $mine = $request->boolean('mine');
         $statusFilter = $request->query('status');
-        $fresh = $request->boolean('fresh');
-        $cacheKey = "event_{$eventId}_sets_" . ($mine ? "user_{$user->id}" : 'all');
-        $cacheKey .= $statusFilter ? "_status_{$statusFilter}" : '';
         
         try {
-            $resolver = function () use ($user, $eventId, $request) {
-                $mine = $request->boolean('mine');
-                $statusFilter = $request->query('status');
+            $sets = $this->client->getEventSets($user, $eventId, [
+                'mine' => $mine,
+                'status' => $statusFilter,
+            ]);
 
-                $sets = $this->client->getEventSets($user, $eventId, [
-                    'mine' => $mine,
-                    'status' => $statusFilter,
-                ]);
-
-                // Enriquecer con información de reportes locales para evitar duplicados
-                $setIds = array_column($sets, 'id');
-                $reports = Report::whereIn('set_id', $setIds)
-                    ->orderBy('created_at', 'desc')
-                    ->get()
-                    ->groupBy('set_id');
-                $states = SetState::whereIn('set_id', $setIds)
-                    ->get()
-                    ->keyBy('set_id');
-
-                $startggUserId = $user?->startgg_user_id;
-
-                $mapped = array_map(function (array $set) use ($reports, $states, $mine, $startggUserId) {
-                    $report = $reports[$set['id']][0] ?? null;
-                    $state = $states->get($set['id']);
-                    if ($state?->best_of) {
-                        $set['bestOf'] = (int) $state->best_of;
-                    }
-
-                    // Si start.gg dice que el set no ha comenzado, debe tratarse como "nuevo"
-                    // (no arrastrar estado local de reportes anteriores)
-                    if (($set['status'] ?? null) === 'not_started') {
-                        return $set;
-                    }
-
-                    if ($report) {
-                        $set['reportStatus'] = $report->status;
-                    }
-
-                    // No mostrar sets reportados/aprobados en el dashboard (según estado local)
-                    if (in_array($set['reportStatus'] ?? null, ['pending', 'approved'], true)) {
-                        return null;
-                    }
-
-                    // Filtrar por sets del usuario si se pide "mine"
-                    if ($mine && $startggUserId) {
-                        $isMine = (string)($set['p1']['userId'] ?? '') === (string)$startggUserId
-                            || (string)($set['p2']['userId'] ?? '') === (string)$startggUserId;
-                        if (!$isMine) {
-                            return null;
-                        }
-                    }
-
-                    return $set;
-                }, $sets);
-
-                // Quitar los nulos generados por filtrado
-                $filteredSets = array_values(array_filter($mapped));
-
-                // Guardia extra: nunca mostrar completados
-                $filteredSets = array_values(array_filter($filteredSets, function ($set) {
-                    return in_array($set['status'] ?? null, ['not_started', 'in_progress'], true);
-                }));
-
-                // Aplicar filtro por estado si corresponde
-                if ($statusFilter) {
-                    $filteredSets = array_values(array_filter($filteredSets, function ($set) use ($statusFilter) {
-                        return $set['status'] === $statusFilter;
-                    }));
-                }
-
-                return $filteredSets;
-            };
-
-            $sets = $fresh
-                ? $resolver()
-                : Cache::remember($cacheKey, now()->addSeconds(10), $resolver);
-
-            if ($fresh) {
-                // Compartir el resultado fresco con el resto de clientes
-                Cache::put($cacheKey, $sets, now()->addSeconds(10));
-            }
-
-            // Fallback "última lista buena": al iniciar un set de un bracket sin
-            // comenzar (IDs preview_*), start.gg arranca la phase y su API tarda
-            // 1-2 min en devolver los sets nuevos (consistencia eventual). Durante
-            // ese hueco devolvería una lista vacía y la UI se quedaría en blanco.
-            // Servimos la última lista no vacía conocida, re-filtrada contra el
-            // estado local para no resucitar sets ya reportados.
-            $lkgKey = "{$cacheKey}_last_good";
-
-            if (empty($sets)) {
-                $fallback = Cache::get($lkgKey);
-                if (!empty($fallback)) {
-                    $setIds = array_column($fallback, 'id');
-                    $reportedIds = Report::whereIn('set_id', $setIds)
-                        ->whereIn('status', ['pending', 'approved'])
-                        ->pluck('set_id')
-                        ->map(fn ($id) => (string) $id)
-                        ->all();
-                    $startedIds = SetState::whereIn('set_id', $setIds)
-                        ->pluck('set_id')
-                        ->map(fn ($id) => (string) $id)
-                        ->all();
-
-                    $sets = array_values(array_filter(array_map(function (array $set) use ($reportedIds, $startedIds) {
-                        if (in_array((string) $set['id'], $reportedIds, true)) {
-                            return null;
-                        }
-                        // El set recién iniciado tiene SetState local: reflejarlo
-                        if (($set['status'] ?? null) === 'not_started' && in_array((string) $set['id'], $startedIds, true)) {
-                            $set['status'] = 'in_progress';
-                        }
-                        return $set;
-                    }, $fallback)));
-
-                    Log::info('Serving last-known-good sets while start.gg catches up', [
-                        'event_id' => $eventId,
-                        'count' => count($sets),
-                    ]);
-                }
-            } else {
-                Cache::put($lkgKey, $sets, now()->addMinutes(3));
-            }
-
-            return response()->json($sets);
+            return response()->json($this->enrichDashboardSets($sets, $user, $mine, $statusFilter));
         } catch (\Throwable $e) {
             Log::error('Error fetching event sets', [
                 'event_id' => $eventId,
@@ -166,6 +52,62 @@ class EventController extends Controller
                 'message' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    private function enrichDashboardSets(array $sets, $user, bool $mine, ?string $statusFilter): array
+    {
+        $setIds = array_column($sets, 'id');
+        $reports = Report::whereIn('set_id', $setIds)
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->groupBy('set_id');
+        $states = SetState::whereIn('set_id', $setIds)
+            ->get()
+            ->keyBy('set_id');
+
+        $startggUserId = $user?->startgg_user_id;
+
+        $mapped = array_map(function (array $set) use ($reports, $states, $mine, $startggUserId) {
+            $report = $reports[$set['id']][0] ?? $reports[(string) $set['id']][0] ?? null;
+            $state = $states->get($set['id']) ?? $states->get((string) $set['id']);
+            if ($state?->best_of) {
+                $set['bestOf'] = (int) $state->best_of;
+            }
+
+            if ($report) {
+                $set['reportStatus'] = $report->status;
+            }
+
+            if (in_array($set['reportStatus'] ?? null, ['pending', 'approved'], true)) {
+                return null;
+            }
+
+            if ($mine && $startggUserId) {
+                $hasUserIds = ($set['p1']['userId'] ?? null) || ($set['p2']['userId'] ?? null);
+                if ($hasUserIds) {
+                    $isMine = (string) ($set['p1']['userId'] ?? '') === (string) $startggUserId
+                        || (string) ($set['p2']['userId'] ?? '') === (string) $startggUserId;
+                    if (!$isMine) {
+                        return null;
+                    }
+                }
+            }
+
+            return $set;
+        }, $sets);
+
+        $filteredSets = array_values(array_filter($mapped));
+        $filteredSets = array_values(array_filter($filteredSets, function ($set) {
+            return in_array($set['status'] ?? null, ['not_started', 'in_progress'], true);
+        }));
+
+        if ($statusFilter) {
+            $filteredSets = array_values(array_filter($filteredSets, function ($set) use ($statusFilter) {
+                return $set['status'] === $statusFilter;
+            }));
+        }
+
+        return $filteredSets;
     }
 
     /**
@@ -229,33 +171,54 @@ class EventController extends Controller
             ]);
         }
 
-        // Permitir que el frontend pase el slug para evitar una consulta extra
-        $slug = $request->query('tournamentSlug');
-
-        if (!$slug) {
-            // Fallback: obtener detalles del evento para conseguir el slug (cacheado 5m)
-            try {
-                $cacheKey = "event_{$eventId}_detail_user_{$user->id}";
-                $event = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user, $eventId) {
-                    return $this->client->getEvent($user, $eventId);
-                });
-                $slug = data_get($event, 'tournamentSlug') ?? data_get($event, 'tournamentName');
-            } catch (\Throwable $e) {
-                Log::error('adminCheck: failed to resolve slug from event', [
-                    'event_id' => $eventId,
-                    'error' => $e->getMessage(),
-                ]);
-                return response()->json(['isAdmin' => false, 'reason' => 'slug_unavailable'], 500);
-            }
+        // Resolver slug SIEMPRE desde el evento (no confiar en el cliente).
+        // Si el frontend envía tournamentSlug, solo se acepta si coincide.
+        try {
+            $cacheKey = "event_{$eventId}_detail_user_{$user->id}";
+            $event = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user, $eventId) {
+                return $this->client->getEvent($user, $eventId);
+            });
+            $slug = data_get($event, 'tournamentSlug') ?? data_get($event, 'tournamentName');
+        } catch (\Throwable $e) {
+            Log::error('adminCheck: failed to resolve slug from event', [
+                'event_id' => $eventId,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json(['isAdmin' => false, 'reason' => 'slug_unavailable'], 500);
         }
 
         if (!$slug) {
             return response()->json(['isAdmin' => false, 'reason' => 'slug_missing'], 400);
         }
 
+        $clientSlug = $request->query('tournamentSlug');
+        if ($clientSlug) {
+            $normalize = static function (?string $value): string {
+                $value = strtolower(trim((string) $value));
+                return preg_replace('#^tournament/#', '', $value) ?? $value;
+            };
+            if ($normalize($clientSlug) !== $normalize($slug)) {
+                Log::warning('adminCheck: tournament slug mismatch', [
+                    'event_id' => $eventId,
+                    'resolved_slug' => $slug,
+                    'client_slug' => $clientSlug,
+                    'user_id' => $user->id,
+                ]);
+                return response()->json([
+                    'isAdmin' => false,
+                    'reason' => 'tournament_mismatch',
+                    'code' => 'tournament_mismatch',
+                ], 409);
+            }
+        }
+
         $matchAdmin = function ($ownerId, array $adminIds) use ($startggUserId) {
-            return ($ownerId && (string) $ownerId === $startggUserId)
-                || collect($adminIds)->contains(fn ($id) => (string) $id === $startggUserId);
+            if (\App\Services\StartggClient::sameStartggUserId($ownerId, $startggUserId)) {
+                return true;
+            }
+            return collect($adminIds)->contains(
+                fn ($id) => \App\Services\StartggClient::sameStartggUserId($id, $startggUserId)
+            );
         };
 
         // 1) Intentar con el token de la app (PAT)
@@ -352,6 +315,7 @@ class EventController extends Controller
             'isAdmin' => $isAdmin,
             'slug' => $slug,
         ], now()->addMinutes(5));
+        Cache::put("event_isadmin_{$eventId}_user_{$user->id}", $isAdmin, now()->addMinutes(5));
 
         return response()->json([
             'isAdmin' => $isAdmin,

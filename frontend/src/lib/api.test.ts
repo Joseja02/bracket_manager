@@ -39,13 +39,37 @@ describe('api', () => {
 
     const originalLocation = window.location;
     Object.defineProperty(window, 'location', {
-      value: { href: '' },
+      value: { href: '', pathname: '/dashboard', search: '' },
       writable: true,
     });
 
     authApi.login();
 
     expect(window.location.href).toBe('https://api.example.com/auth/login');
+
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      writable: true,
+    });
+  });
+
+  it('clears token and redirects to login on 401', async () => {
+    vi.resetModules();
+    const { default: api } = await import('@/lib/api');
+    mock = new MockAdapter(api);
+    sessionStorage.setItem('auth_token', 'expired-token');
+
+    const originalLocation = window.location;
+    Object.defineProperty(window, 'location', {
+      value: { href: '', pathname: '/dashboard', search: '' },
+      writable: true,
+    });
+
+    mock.onGet('/events/1').reply(401, { message: 'Unauthenticated' });
+
+    await expect(api.get('/events/1')).rejects.toBeTruthy();
+    expect(sessionStorage.getItem('auth_token')).toBe(null);
+    expect(window.location.href).toContain('/login?error=session_expired');
 
     Object.defineProperty(window, 'location', {
       value: originalLocation,

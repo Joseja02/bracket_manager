@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
@@ -8,25 +8,15 @@ import { adminApi } from '@/lib/api';
 import { FileCheck, AlertCircle, RefreshCw, ChevronRight } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import type { ReportSummary } from '@/types';
 
 export default function AdminReports() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
-  const [searchParams] = useSearchParams();
-  const eventId = searchParams.get('eventId') || sessionStorage.getItem('admin_event_id') || '';
-
-  useEffect(() => {
-    if (eventId) {
-      sessionStorage.setItem('admin_event_id', eventId);
-    }
-  }, [eventId]);
 
   const { data: reports, isLoading } = useQuery({
-    queryKey: ['adminReports', filter, eventId],
-    queryFn: async () => adminApi.getReports({ status: filter, eventId }),
-    enabled: !!eventId,
+    queryKey: ['adminReports', filter],
+    queryFn: async () => adminApi.getReports({ status: filter }),
   });
 
   const filters = [
@@ -71,15 +61,7 @@ export default function AdminReports() {
           ))}
         </div>
 
-        {/* Lista de Reportes */}
-        {!eventId ? (
-          <div className="gaming-card flex flex-col items-center justify-center py-10 border-dashed">
-            <AlertCircle className="w-10 h-10 text-muted-foreground mb-3" />
-            <p className="text-muted-foreground text-center text-sm">
-              Selecciona un evento para ver sus reportes
-            </p>
-          </div>
-        ) : isLoading ? (
+        {isLoading ? (
           <div className="space-y-3">
             <Skeleton className="h-32 rounded-xl" />
             <Skeleton className="h-32 rounded-xl" />
@@ -92,7 +74,9 @@ export default function AdminReports() {
               <AlertCircle className="w-10 h-10 text-muted-foreground mb-3" />
             )}
             <p className="text-muted-foreground text-center text-sm">
-              No hay reportes {filter === 'pending' ? 'pendientes' : filter === 'approved' ? 'aprobados' : 'rechazados'}
+              {filter === 'pending'
+                ? 'Los sets a validar aparecerán aquí'
+                : `No hay reportes ${filter === 'approved' ? 'aprobados' : 'rechazados'}`}
             </p>
           </div>
         ) : (
@@ -100,7 +84,7 @@ export default function AdminReports() {
             {reports.map((report) => (
               <button
                 key={report.id}
-                onClick={() => navigate(`/admin/reports/${report.id}${eventId ? `?eventId=${eventId}` : ''}`)}
+                onClick={() => navigate(`/admin/reports/${report.id}`)}
                 className="gaming-card w-full text-left p-4 space-y-3 hover:border-primary/40 transition-all group"
               >
                 <div className="flex items-start justify-between gap-2">

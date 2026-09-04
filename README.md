@@ -3,7 +3,7 @@
 Gestor web para torneos de Smash Ultimate que se conecta a start.gg. Pensado para que organizadores y competidores sigan sus sets de forma sencilla: iniciar partidas, reportar resultados y ver el estado de cada ronda.
 
 ## Que ofrece
-- Ver eventos activos y navegar a sus sets.
+- Ver eventos activos y navegar a sus sets (lista siempre en vivo desde start.gg).
 - Iniciar un set y seguirlo con control de RPS, bans y formato BO3 o BO5. Se utiliza el ruleset oficial de SmashBrosSpain.
 - Registrar y enviar el resultado para que lo revise un administrador.
 - Posibilidad de revisar reportes de los jugadores para aprobarlos o rechazarlos y/o modificarlos en caso de que haya algún error o disputa.
@@ -25,8 +25,9 @@ La aplicacion es web: basta con abrir el enlace publico que se proporcione (ej. 
 
 ## Estructura del proyecto
 ```
-startgg_manager/
+bracket_manager/
 ├── backend/    # API y logica de sets/reportes
-└── frontend/   # SPA para admin/competidores
+├── frontend/   # SPA para admin/competidores
+└── docs/       # Contratos API, checklist deploy, seguridad, TODO
 ```
 

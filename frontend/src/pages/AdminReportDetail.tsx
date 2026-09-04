@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
@@ -31,14 +31,6 @@ const assetBase = import.meta.env.BASE_URL;
 export default function AdminReportDetail() {
   const { reportId } = useParams<{ reportId: string }>();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const eventId = searchParams.get('eventId') || sessionStorage.getItem('admin_event_id') || '';
-
-  useEffect(() => {
-    if (eventId) {
-      sessionStorage.setItem('admin_event_id', eventId);
-    }
-  }, [eventId]);
   const queryClient = useQueryClient();
   const [rejectionReason, setRejectionReason] = useState('');
   const [isEditing, setIsEditing] = useState(false);
@@ -95,7 +87,7 @@ export default function AdminReportDetail() {
         description: 'Gracias maja',
       });
       queryClient.invalidateQueries({ queryKey: ['adminReports'] });
-      setTimeout(() => navigate(eventId ? `/admin/reports?eventId=${eventId}` : '/admin/reports'), 1000);
+      setTimeout(() => navigate('/admin/reports'), 1000);
     },
     onError: () => {
       toast({
@@ -114,7 +106,7 @@ export default function AdminReportDetail() {
         description: 'El competidor será notificado',
       });
       queryClient.invalidateQueries({ queryKey: ['adminReports'] });
-      setTimeout(() => navigate(eventId ? `/admin/reports?eventId=${eventId}` : '/admin/reports'), 1000);
+      setTimeout(() => navigate('/admin/reports'), 1000);
     },
     onError: () => {
       toast({
@@ -144,7 +136,7 @@ export default function AdminReportDetail() {
           <p className="text-muted-foreground mb-4">Reporte no encontrado</p>
           <Button
             variant="outline"
-            onClick={() => navigate(eventId ? `/admin/reports?eventId=${eventId}` : '/admin/reports')}
+            onClick={() => navigate('/admin/reports')}
             className="border-border/50"
           >
             Volver
@@ -181,7 +173,7 @@ export default function AdminReportDetail() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate(eventId ? `/admin/reports?eventId=${eventId}` : '/admin/reports')}
+            onClick={() => navigate('/admin/reports')}
             className="shrink-0"
           >
             <ArrowLeft className="w-5 h-5" />

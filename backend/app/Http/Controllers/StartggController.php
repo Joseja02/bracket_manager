@@ -223,4 +223,58 @@ class StartggController extends Controller
         
         return redirect()->away(rtrim($frontendUrl, '/') . '/oauth/callback?token=' . $apiToken);
     }
+
+    /**
+     * Login de desarrollo SOLO para localhost.
+     *
+     * start.gg permite un único redirect_uri por aplicación y lo ocupa producción,
+     * por lo que en local no se puede completar el flujo OAuth. Este atajo inyecta
+     * un Personal Access Token (PAT) preconfigurado y emite un token Sanctum, sin
+     * pasar nunca por el callback de start.gg.
+     *
+     * SEGURIDAD (defensa en profundidad, 3 barreras):
+     *   1. La ruta solo se registra cuando APP_ENV=local (ver routes/web.php). En
+     *      dev/producción la ruta NO EXISTE.
+     *   2. Este método vuelve a exigir entorno local + flag explícito DEV_AUTH_BYPASS.
+     *   3. El PAT y el user id viven solo en backend/.env local (gitignored).
+     */
+    public function devLogin(Request $request)
+    {
+        if (!app()->environment('local') || !filter_var(env('DEV_AUTH_BYPASS', false), FILTER_VALIDATE_BOOLEAN)) {
+            Log::warning('dev-login blocked: not local environment or flag disabled', [
+                'environment' => app()->environment(),
+            ]);
+            abort(404);
+        }
+
+        $devUserId = env('STARTGG_DEV_USER_ID');
+        $devToken = env('STARTGG_DEV_TOKEN');
+        $devGamerTag = env('STARTGG_DEV_GAMERTAG', 'DevUser');
+
+        if (!$devUserId || !$devToken) {
+            Log::error('dev-login misconfigured: missing STARTGG_DEV_USER_ID or STARTGG_DEV_TOKEN');
+            abort(500, 'Dev login no configurado. Define STARTGG_DEV_USER_ID y STARTGG_DEV_TOKEN en backend/.env');
+        }
+
+        // El PAT de start.gg no expira; ponemos una expiración lejana para que
+        // StartggAuth::getValidToken no intente refrescarlo (no hay refresh token).
+        $user = User::query()->updateOrCreate(
+            ['startgg_user_id' => (string) $devUserId],
+            [
+                'name' => $devGamerTag,
+                'email' => 'dev_' . $devUserId . '@startgg.local',
+                'password' => bcrypt(Str::random(32)),
+                'startgg_access_token' => $devToken,
+                'startgg_refresh_token' => null,
+                'token_expires_at' => Carbon::now()->addYears(5),
+            ]
+        );
+
+        $apiToken = $user->createToken('dev-login')->plainTextToken;
+
+        Log::info('dev-login issued local token', ['user_id' => $user->id]);
+
+        $frontendUrl = $this->getFrontendUrl();
+        return redirect()->away(rtrim($frontendUrl, '/') . '/oauth/callback?token=' . $apiToken);
+    }
 }

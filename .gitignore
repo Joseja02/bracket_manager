@@ -6,8 +6,13 @@ backend/.env
 backend/.env.*
 frontend/.env
 frontend/.env.*
-token_personal_startgg.txt
-set-stage/
+
+# Documentation: keep only root README.md in the repo
+*.md
+!README.md
+AGENTS.md
+.cursor/*
+.docs/*
 
 # Dependencies and builds
 node_modules/
@@ -25,3 +30,5 @@ set-stage/
 Caddyfile
 deploy-dev.sh
 docker-compose.yml
+
+backend/tests/load/k6-stress.js

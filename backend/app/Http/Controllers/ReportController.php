@@ -8,32 +8,34 @@ use App\Models\Report;
 use App\Models\Game;
 use App\Services\StartggClient;
 use App\Services\StartggAppClient;
+use App\Services\StartggErrorClassifier;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 
 class ReportController extends Controller
 {
+    use \App\Http\Concerns\ChecksEventAdmin;
+    use \App\Http\Concerns\InvalidatesSetCaches;
+
     public function __construct(private StartggClient $client, private StartggAppClient $appClient) {}
 
     /**
-     * Listar reportes (admin)
      * GET /api/admin/reports
+     * eventId is optional. Without it, all reports (admin role). With it, filter + event admin check.
      */
     public function index(Request $request)
     {
         $user = Auth::user();
         $eventId = $request->query('eventId');
-        if (!$eventId) {
-            return response()->json(['error' => 'eventId is required'], 400);
-        }
 
-        if (!$this->isEventAdmin($user, $eventId)) {
-            return response()->json(['error' => 'Forbidden. Not an admin of this event.'], 403);
-        }
+        $query = Report::with(['user', 'games'])->orderBy('created_at', 'desc');
 
-        $query = Report::with(['user', 'games'])
-            ->where('event_id', $eventId)
-            ->orderBy('created_at', 'desc');
+        if ($eventId) {
+            if (!$this->isEventAdmin($user, $eventId)) {
+                return response()->json(['error' => 'Forbidden. Not an admin of this event.'], 403);
+            }
+            $query->where('event_id', $eventId);
+        }
 
         // Filtrar por estado
         if ($request->has('status')) {
@@ -222,11 +224,22 @@ class ReportController extends Controller
             // Marcar como aprobado
             $report->approve();
 
+            $this->invalidateSetCaches($report->set_id, $report->event_id, $user->id);
+
             return response()->json([
                 'message' => 'Report approved and submitted to start.gg',
                 'report' => $report,
             ]);
             
+        } catch (\RuntimeException $e) {
+            $errorMessage = $e->getMessage();
+
+            Log::error('Error approving report', [
+                'report_id' => $reportId,
+                'error' => $errorMessage,
+            ]);
+
+            return StartggErrorClassifier::toJsonResponse($errorMessage, 'Failed to approve report');
         } catch (\Throwable $e) {
             $errorMessage = $e->getMessage();
             
@@ -238,6 +251,7 @@ class ReportController extends Controller
             return response()->json([
                 'error' => 'Failed to approve report',
                 'message' => $errorMessage,
+                'code' => StartggErrorClassifier::UNKNOWN,
             ], 500);
         }
     }
@@ -266,48 +280,12 @@ class ReportController extends Controller
 
         $report->reject($request->input('reason'));
 
+        $this->invalidateSetCaches($report->set_id, $report->event_id, $user->id);
+
         return response()->json([
             'message' => 'Report rejected',
             'report' => $report,
         ]);
-    }
-
-    private function isEventAdmin($user, $eventId): bool
-    {
-        if (!$user?->startgg_user_id) {
-            return false;
-        }
-
-        try {
-            $event = $this->client->getEvent($user, $eventId);
-            if (!empty($event['isAdminEvent'])) {
-                return true;
-            }
-
-            $slug = data_get($event, 'tournamentSlug') ?? data_get($event, 'tournamentName');
-            if (!$slug) {
-                return false;
-            }
-
-            $info = $this->appClient->getTournamentAdminInfo($slug);
-            $ownerId = $info['ownerId'] ?? null;
-            $adminIds = collect($info['adminUserIds'] ?? [])
-                ->map(fn ($id) => (string) $id)
-                ->filter()
-                ->values()
-                ->all();
-
-            $startggUserId = (string) $user->startgg_user_id;
-            return ($ownerId && (string) $ownerId === $startggUserId)
-                || collect($adminIds)->contains(fn ($id) => (string) $id === $startggUserId);
-        } catch (\Throwable $e) {
-            Log::warning('report admin check failed', [
-                'event_id' => $eventId,
-                'user_id' => $user->id,
-                'error' => $e->getMessage(),
-            ]);
-            return false;
-        }
     }
 }
 

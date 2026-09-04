@@ -51,7 +51,7 @@ class AuthCallbackTest extends TestCase
         $response->assertRedirect();
         $location = $response->headers->get('Location');
 
-        $this->assertStringStartsWith('http://localhost:8080/auth/callback?token=', $location);
+        $this->assertStringStartsWith('http://localhost:8080/oauth/callback?token=', $location);
 
         $user = User::where('startgg_user_id', '99')->first();
         $this->assertNotNull($user);
@@ -65,7 +65,7 @@ class AuthCallbackTest extends TestCase
         $response = $this->withSession(['oauth_state' => 'state-a'])
             ->get('/auth/callback?code=code-123&state=state-b');
 
-        $response->assertRedirect('http://localhost:8080/auth/callback?error=invalid_state');
+        $response->assertRedirect('http://localhost:8080/oauth/callback?error=invalid_state');
     }
 
     public function test_callback_requires_code(): void
@@ -73,7 +73,7 @@ class AuthCallbackTest extends TestCase
         $response = $this->withSession(['oauth_state' => 'state-a'])
             ->get('/auth/callback?state=state-a');
 
-        $response->assertRedirect('http://localhost:8080/auth/callback?error=missing_code');
+        $response->assertRedirect('http://localhost:8080/oauth/callback?error=missing_code');
     }
 }
 

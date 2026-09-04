@@ -53,12 +53,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                   Dashboard
                 </DropdownMenuItem>
                 {user?.role === 'admin' && (
-                  <DropdownMenuItem
-                    onClick={() => {
-                      const eventId = sessionStorage.getItem('admin_event_id');
-                      navigate(eventId ? `/admin/reports?eventId=${eventId}` : '/admin/reports');
-                    }}
-                  >
+                  <DropdownMenuItem onClick={() => navigate('/admin/reports')}>
                     <Settings className="mr-2 h-4 w-4" />
                     Admin Reports
                   </DropdownMenuItem>

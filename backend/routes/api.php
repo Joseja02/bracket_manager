@@ -12,7 +12,11 @@ use App\Http\Controllers\DebugController;
 Route::get('/ping', fn() => response()->json(['ok' => true]));
 
 // Protected routes
-Route::middleware('auth:sanctum')->group(function () {
+// throttle:180,1 → 180 req/min por usuario autenticado (clave = user id). El
+// polling normal (sets al abrir/refrescar, spectate ~8/min, admin-check raro)
+// queda muy por debajo; el límite solo corta abusos/DoS. Endpoints muy sensibles
+// (spectate) mantienen además su propio throttle más estricto.
+Route::middleware(['auth:sanctum', 'throttle:180,1'])->group(function () {
     // Usuario actual
     Route::get('/me', [MeController::class, 'me']);
     Route::get('/me/events', [MeController::class, 'events']);
