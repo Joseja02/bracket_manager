@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use App\Services\StartggClient;
 use App\Services\StartggAppClient;
+use App\Services\StartggErrorClassifier;
 use App\Models\Report;
 use App\Models\Game;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +18,10 @@ use Illuminate\Support\Facades\Cache;
 
 class SetController extends Controller
 {
+    use \App\Http\Concerns\ChecksEventAdmin;
+    use \App\Http\Concerns\InvalidatesSetCaches;
+    use \App\Http\Concerns\TracksSetEventBindings;
+
     public function __construct(
         private StartggClient $client,
         private StartggAppClient $appClient,
@@ -90,72 +95,126 @@ class SetController extends Controller
         $user = Auth::user();
         $payload = $request->validate([
             'bestOf' => 'nullable|integer|in:3,5',
+            'eventId' => 'nullable',
         ]);
         $bestOf = (int) ($payload['bestOf'] ?? 3);
         
         try {
-            // Verificar que el usuario sea admin del torneo del evento
-            $setDetail = $this->client->getSetDetail($user, $setId);
-            $eventId = $setDetail['eventId'] ?? null;
+            $requestedEventId = $payload['eventId'] ?? null;
 
-            if (!$eventId || !$this->isEventAdmin($user, $eventId)) {
-                return response()->json([
-                    'error' => 'Unauthorized',
-                    'message' => 'Solo los administradores del torneo pueden iniciar sets',
-                ], 403);
-            }
+            if ($requestedEventId !== null && $requestedEventId !== '') {
+                if (!$this->isEventAdmin($user, $requestedEventId)) {
+                    return response()->json([
+                        'error' => 'Unauthorized',
+                        'message' => 'Solo los administradores del torneo pueden iniciar sets',
+                    ], 403);
+                }
 
-            // Si start.gg indica que el set NO está iniciado, debemos empezar "limpio"
-            // y no arrastrar reportes/bans/drafts previos (caso típico: set reiniciado tras rechazo).
-            if (($setDetail['status'] ?? null) === 'not_started') {
-                DB::beginTransaction();
-                try {
-                    // Borrar reportes previos (cascade borra games)
-                    Report::where('set_id', $setId)->delete();
-                    // Borrar borradores
-                    SetDraft::where('set_id', $setId)->delete();
-                    // Resetear estado del set (RPS/bans/best_of)
-                    SetState::where('set_id', $setId)->delete();
-                    DB::commit();
-                } catch (\Throwable $e) {
-                    DB::rollBack();
-                    throw $e;
+                $binding = $this->getSetEventBinding($setId);
+                if ($binding
+                    && (string) $binding['eventId'] !== (string) $requestedEventId) {
+                    return response()->json([
+                        'error' => 'Tournament mismatch',
+                        'message' => 'El set no pertenece al evento indicado.',
+                        'code' => StartggErrorClassifier::TOURNAMENT_MISMATCH,
+                    ], 409);
+                }
+
+                if ($binding) {
+                    // Relación observada recientemente en GET /events/{id}/sets.
+                    // Permite iniciar preview_* aunque start.gg atraviese su breve
+                    // ventana de consistencia eventual y devuelva una lista vacía.
+                    $setDetail = [
+                        'id' => $setId,
+                        'eventId' => $binding['eventId'],
+                        'status' => $binding['status'] ?? null,
+                    ];
+                } else {
+                    $eventSets = $this->client->getEventSets($user, $requestedEventId);
+                    $setDetail = collect($eventSets)->first(
+                        fn (array $candidate) => (string) ($candidate['id'] ?? '') === (string) $setId
+                    );
+
+                    if ($setDetail) {
+                        $this->rememberSetEventBindings([$setDetail], $requestedEventId);
+                    } elseif (empty($eventSets)) {
+                        // Una lista vacía no demuestra que el set pertenezca a
+                        // otro evento: start.gg puede estar iniciando la phase.
+                        // Para IDs normales intentamos la consulta individual.
+                        if (!str_starts_with((string) $setId, 'preview_')) {
+                            try {
+                                $directSet = $this->client->getSetDetail($user, $setId);
+                                if ((string) ($directSet['eventId'] ?? '') === (string) $requestedEventId) {
+                                    $setDetail = $directSet;
+                                }
+                            } catch (\Throwable $lookupError) {
+                                Log::warning('Direct set lookup failed after empty event list', [
+                                    'set_id' => $setId,
+                                    'event_id' => $requestedEventId,
+                                    'error' => $lookupError->getMessage(),
+                                ]);
+                            }
+                        }
+
+                        if (!$setDetail) {
+                            return response()->json([
+                                'error' => 'Set lookup temporarily unavailable',
+                                'message' => 'start.gg aún está actualizando los sets del evento. Inténtalo de nuevo.',
+                                'code' => 'set_lookup_unavailable',
+                            ], 503);
+                        }
+                    } else {
+                        return response()->json([
+                            'error' => 'Tournament mismatch',
+                            'message' => 'El set no pertenece al evento indicado.',
+                            'code' => StartggErrorClassifier::TOURNAMENT_MISMATCH,
+                        ], 409);
+                    }
+                }
+
+                $eventId = $requestedEventId;
+            } else {
+                $setDetail = $this->client->getSetDetail($user, $setId);
+                $eventId = $setDetail['eventId'] ?? null;
+
+                if (!$eventId || !$this->isEventAdmin($user, $eventId)) {
+                    return response()->json([
+                        'error' => 'Unauthorized',
+                        'message' => 'Solo los administradores del torneo pueden iniciar sets',
+                    ], 403);
                 }
             }
 
-            // Marcar el set como en progreso en start.gg
+            $shouldResetLocal = ($setDetail['status'] ?? null) === 'not_started';
+
+            // start.gg debe aceptar la mutación antes de borrar cualquier estado
+            // local. Así un error externo nunca destruye reportes o drafts.
+            $startedAt = microtime(true);
             $result = $this->client->markSetInProgress($user, $setId);
+            Log::info('Set start mutation timing', [
+                'set_id' => $setId,
+                'event_id' => $eventId,
+                'ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                'had_event_id' => array_key_exists('eventId', $payload) && $payload['eventId'] !== null && $payload['eventId'] !== '',
+            ]);
 
-            $state = SetState::firstOrCreate(
-                ['set_id' => $setId],
-                ['bans' => [], 'phase' => 'rps']
-            );
-            $state->best_of = $bestOf;
-            $state->save();
+            DB::transaction(function () use ($setId, $bestOf, $shouldResetLocal) {
+                if ($shouldResetLocal) {
+                    Report::where('set_id', $setId)->delete();
+                    SetDraft::where('set_id', $setId)->delete();
+                    SetState::where('set_id', $setId)->delete();
+                }
 
-            // Invalidar caches relacionados para reflejar el nuevo estado
-            $eventId = $setDetail['eventId'] ?? null;
-            if ($eventId) {
-                // Limpiar todos los posibles caches de este evento
-                $statusFilters = ['', '_status_not_started', '_status_in_progress', '_status_completed'];
-                $cacheKeys = ["set_detail_{$setId}"];
-                
-                foreach ($statusFilters as $status) {
-                    $cacheKeys[] = "event_{$eventId}_sets_user_{$user->id}{$status}";
-                    $cacheKeys[] = "event_{$eventId}_sets_all{$status}";
-                }
-                
-                foreach ($cacheKeys as $key) {
-                    Cache::forget($key);
-                }
-                $this->forgetSpectateCache($setId);
-                
-                Log::info('Cache invalidated after starting set', [
-                    'set_id' => $setId,
-                    'event_id' => $eventId,
-                    'cache_keys' => $cacheKeys,
-                ]);
-            }
+                $state = SetState::firstOrCreate(
+                    ['set_id' => $setId],
+                    ['bans' => [], 'phase' => 'rps']
+                );
+                $state->best_of = $bestOf;
+                $state->save();
+            });
+
+            $this->invalidateSetCaches($setId, $eventId, $user->id, false);
+            $this->forgetSetEventBinding($setId);
 
             return response()->json([
                 'message' => 'Set marked as in progress',
@@ -172,22 +231,7 @@ class SetController extends Controller
                 'error' => $msg,
             ]);
 
-            // Detectar caso de scopes faltantes
-            if (str_contains(strtolower($msg), 'scope') || str_contains(strtolower($msg), 'tournament.reporter') || str_contains(strtolower($msg), 'missing the following scopes')) {
-                $reauthUrl = rtrim(config('app.url', env('APP_URL', 'http://localhost:8000')), '/') . '/auth/login';
-                return response()->json([
-                    'error' => 'Insufficient scopes',
-                    'message' => $msg,
-                    'action' => 'reauthenticate',
-                    'reauth_url' => $reauthUrl,
-                    'note' => 'Authenticate again to grant the tournament.reporter scope',
-                ], 403);
-            }
-
-            return response()->json([
-                'error' => 'Failed to start set',
-                'message' => $msg,
-            ], 500);
+            return StartggErrorClassifier::toJsonResponse($msg, 'Failed to start set');
 
         } catch (\Throwable $e) {
             Log::error('Error starting set', [
@@ -199,6 +243,7 @@ class SetController extends Controller
             return response()->json([
                 'error' => 'Failed to start set',
                 'message' => $e->getMessage(),
+                'code' => StartggErrorClassifier::UNKNOWN,
             ], 500);
         }
     }
@@ -233,6 +278,15 @@ class SetController extends Controller
         }
 
         try {
+            // Obtener información del set desde start.gg
+            $setDetail = $this->client->getSetDetail($user, $setId);
+            if (($setDetail['status'] ?? null) !== 'in_progress') {
+                return response()->json([
+                    'error' => 'Set not in progress',
+                    'message' => 'Solo se pueden enviar reportes cuando el set está en progreso.',
+                ], 409);
+            }
+
             // Evitar reportes duplicados pendientes para el mismo set
             $pending = Report::where('set_id', $setId)->where('status', 'pending')->first();
             if ($pending) {
@@ -243,8 +297,6 @@ class SetController extends Controller
                 ], 409);
             }
 
-            // Obtener información del set desde start.gg
-            $setDetail = $this->client->getSetDetail($user, $setId);
             $state = SetState::where('set_id', $setId)->first();
             if ($state?->best_of) {
                 $setDetail['bestOf'] = (int) $state->best_of;
@@ -335,19 +387,7 @@ class SetController extends Controller
 
             DB::commit();
 
-            // Limpiar caches de sets para que el dashboard refleje estado reportado
-            $cacheKeys = [
-                "event_{$setDetail['eventId']}_sets_user_{$user->id}",
-                "event_{$setDetail['eventId']}_sets_user_{$user->id}_status_in_progress",
-                "event_{$setDetail['eventId']}_sets_user_{$user->id}_status_reported",
-                "event_{$setDetail['eventId']}_sets_all",
-                "event_{$setDetail['eventId']}_sets_all_status_in_progress",
-                "event_{$setDetail['eventId']}_sets_all_status_reported",
-            ];
-            foreach ($cacheKeys as $key) {
-                Cache::forget($key);
-            }
-            $this->forgetSpectateCache($setId);
+            $this->invalidateSetCaches($setId, $setDetail['eventId'] ?? null, $user->id);
 
             return response()->json([
                 'message' => 'Report submitted successfully',
@@ -408,7 +448,29 @@ class SetController extends Controller
         ]);
 
         // Obtener set detail para saber quién es p1/p2
-        $setDetail = $this->client->getSetDetail($user, $setId);
+        try {
+            $setDetail = $this->client->getSetDetail($user, $setId);
+        } catch (\RuntimeException $e) {
+            Log::warning('Start.gg error fetching set detail for RPS', [
+                'set_id' => $setId,
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return StartggErrorClassifier::toJsonResponse($e->getMessage(), 'Failed to fetch set detail');
+        } catch (\Throwable $e) {
+            Log::error('Error fetching set detail for RPS', [
+                'set_id' => $setId,
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'error' => 'Failed to fetch set detail',
+                'message' => $e->getMessage(),
+                'code' => StartggErrorClassifier::UNKNOWN,
+            ], 500);
+        }
 
         try {
             $state = SetState::firstOrCreate(
@@ -421,6 +483,13 @@ class SetController extends Controller
                 'error' => 'Error de base de datos',
                 'message' => 'La tabla de estados del set no existe. Ejecuta las migraciones: php artisan migrate',
             ], 500);
+        }
+
+        if ($state->phase !== 'rps') {
+            return response()->json([
+                'error' => 'RPS phase not active',
+                'message' => 'La fase de RPS no está activa para este set.',
+            ], 422);
         }
 
         // Determine if user is p1 or p2 by startgg user id
@@ -467,7 +536,30 @@ class SetController extends Controller
             'stage' => 'required|string',
         ]);
 
-        $setDetail = $this->client->getSetDetail($user, $setId);
+        try {
+            $setDetail = $this->client->getSetDetail($user, $setId);
+        } catch (\RuntimeException $e) {
+            Log::warning('Start.gg error fetching set detail for bans', [
+                'set_id' => $setId,
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return StartggErrorClassifier::toJsonResponse($e->getMessage(), 'Failed to fetch set detail');
+        } catch (\Throwable $e) {
+            Log::error('Error fetching set detail for bans', [
+                'set_id' => $setId,
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'error' => 'Failed to fetch set detail',
+                'message' => $e->getMessage(),
+                'code' => StartggErrorClassifier::UNKNOWN,
+            ], 500);
+        }
+
         try {
             $state = SetState::firstOrCreate(
                 ['set_id' => $setId],
@@ -589,7 +681,7 @@ class SetController extends Controller
                 ['data' => $payload['data'], 'status' => 'draft']
             );
 
-            $this->forgetSpectateCache($setId);
+            $this->invalidateSetCaches($setId);
 
             return response()->json($draft);
         } catch (\Throwable $e) {
@@ -794,48 +886,7 @@ class SetController extends Controller
 
     private function forgetSpectateCache(string|int $setId): void
     {
-        Cache::forget("set_spectate_{$setId}");
-        Cache::forget("set_spectate_meta_{$setId}");
-    }
-
-    private function isEventAdmin($user, $eventId): bool
-    {
-        if (!$user?->startgg_user_id) {
-            return false;
-        }
-
-        try {
-            $event = $this->client->getEvent($user, $eventId);
-            if (!empty($event['isAdminEvent'])) {
-                return true;
-            }
-
-            $slug = data_get($event, 'tournamentSlug') ?? data_get($event, 'tournamentName');
-            if (!$slug) {
-                return false;
-            }
-
-            $info = $this->appClient->getTournamentAdminInfo($slug);
-            $ownerId = $info['ownerId'] ?? null;
-            $adminIds = collect($info['adminUserIds'] ?? [])
-                ->map(fn ($id) => (string) $id)
-                ->filter()
-                ->values()
-                ->all();
-
-            $startggUserId = (string) $user->startgg_user_id;
-
-            return ($ownerId && (string) $ownerId === $startggUserId)
-                || collect($adminIds)->contains(fn ($id) => (string) $id === $startggUserId);
-        } catch (\Throwable $e) {
-            Log::warning('set admin check failed', [
-                'event_id' => $eventId,
-                'user_id' => $user->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return false;
-        }
+        $this->invalidateSetCaches($setId);
     }
 
     /**
@@ -905,6 +956,8 @@ class SetController extends Controller
         try {
             DB::beginTransaction();
 
+            $eventId = $request->input('eventId') ?? Report::where('set_id', $setId)->value('event_id');
+
             // Borrar reportes (cascade borra games asociados)
             Report::where('set_id', $setId)->delete();
 
@@ -916,9 +969,7 @@ class SetController extends Controller
 
             DB::commit();
 
-            // Invalidar caches
-            Cache::forget("set_detail_{$setId}");
-            $this->forgetSpectateCache($setId);
+            $this->invalidateSetCaches($setId, $eventId, $user->id, false);
 
             Log::info('Set reset by admin', [
                 'set_id' => $setId,
@@ -978,7 +1029,7 @@ class SetController extends Controller
             $state->save();
 
             Cache::forget("set_detail_{$setId}");
-            $this->forgetSpectateCache($setId);
+            $this->invalidateSetCaches($setId);
 
             Log::info('Set best_of changed by admin', [
                 'set_id' => $setId,

@@ -66,5 +66,38 @@ class StartggAuthTest extends TestCase
         $this->assertNull($auth->refresh($user));
         $this->assertSame('access', $user->fresh()->startgg_access_token);
     }
+
+    public function test_get_valid_token_returns_null_when_expired_and_refresh_fails(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-01-01 12:00:00'));
+        Http::fake([
+            'https://api.start.gg/oauth/access_token' => Http::response(['error' => 'invalid'], 400),
+        ]);
+
+        $user = User::factory()->create([
+            'startgg_refresh_token' => 'refresh',
+            'startgg_access_token' => 'expired-access',
+            'token_expires_at' => Carbon::now()->subMinute(),
+        ]);
+
+        $auth = new StartggAuth();
+        $this->assertNull($auth->getValidToken($user, 5));
+        $this->assertSame('expired-access', $user->fresh()->startgg_access_token);
+        Http::assertSentCount(1);
+    }
+
+    public function test_get_valid_token_keeps_current_token_when_it_is_still_valid(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-01-01 12:00:00'));
+        $user = User::factory()->create([
+            'startgg_refresh_token' => 'refresh',
+            'startgg_access_token' => 'still-valid',
+            'token_expires_at' => Carbon::now()->addMinutes(30),
+        ]);
+
+        $auth = new StartggAuth();
+        $this->assertSame('still-valid', $auth->getValidToken($user, 5));
+        Http::assertNothingSent();
+    }
 }
 

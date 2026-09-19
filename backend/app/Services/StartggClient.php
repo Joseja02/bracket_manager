@@ -31,12 +31,15 @@ class StartggClient
     $doRequest = function ($token) use ($query, $variables) {
       return Http::withToken($token)
         ->acceptJson()
-        ->post(config('startgg.api_url_oauth'), [ // Usar endpoint OAuth
+        ->timeout(20)
+        ->connectTimeout(5)
+        ->post(config('startgg.api_url_oauth'), [
           'query' => $query,
           'variables' => (object) $variables,
         ]);
     };
 
+    $started = microtime(true);
     $resp = $doRequest($token);
 
     // Si aún así recibimos un 401, intentar refrescar una vez más (fallback)
@@ -47,6 +50,18 @@ class StartggClient
       $token = $this->auth->refresh($user) ?? $token;
       $resp = $doRequest($token);
     }
+
+    $graphqlMs = (int) round((microtime(true) - $started) * 1000);
+    $operation = null;
+    if (preg_match('/(?:query|mutation)\s+(\w+)/i', $query, $matches)) {
+      $operation = $matches[1];
+    }
+    Log::info('startgg graphql timing', [
+      'op' => $operation,
+      'ms' => $graphqlMs,
+      'status' => $resp->status(),
+      'user_id' => $user->id,
+    ]);
 
     if ($resp->failed()) {
       $json = $resp->json();
@@ -120,55 +135,195 @@ class StartggClient
   }
 
   /**
-   * Obtener owner y admins de un torneo usando el token del usuario (OAuth)
+   * Roles de administración de start.gg que consideramos "colaboradores" del torneo.
+   * Incluye singular y plural: la UI de start.gg usa a veces "Bracket Managers" /
+   * "Reporters" mientras el schema GraphQL documenta formas en singular.
+   * Ver https://help.start.gg/en/articles/13766145-admin-permissions
+   */
+  public const TOURNAMENT_ADMIN_ROLES = [
+    'Administrator',
+    'Manager',
+    'Bracket Manager',
+    'Bracket Managers',
+    'Reporter',
+    'Reporters',
+  ];
+
+  /**
+   * Compara IDs de usuario de start.gg de forma tolerante (string/int y
+   * posibles prefijos). Evita falsos negativos owner/colaborador.
+   */
+  public static function sameStartggUserId(string|int|null $a, string|int|null $b): bool
+  {
+    if ($a === null || $b === null || $a === '' || $b === '') {
+      return false;
+    }
+
+    $normalize = static function (string|int $value): array {
+      $raw = trim((string) $value);
+      $digits = preg_replace('/\D+/', '', $raw) ?? '';
+      return [$raw, $digits];
+    };
+
+    [$rawA, $digitsA] = $normalize($a);
+    [$rawB, $digitsB] = $normalize($b);
+
+    if ($rawA !== '' && $rawA === $rawB) {
+      return true;
+    }
+
+    return $digitsA !== '' && $digitsA === $digitsB;
+  }
+
+  /**
+   * Obtener owner y admins (todos los roles) de un torneo usando el token OAuth
+   * del usuario. Como el campo `admins` es una "admin-only view", devuelve datos
+   * cuando el propio solicitante es admin del torneo, permitiendo autoverificación.
+   *
+   * Se consultan dos fuentes independientes (cada una aislada para que un fallo
+   * de permisos/scope no anule la otra) y se unen los IDs de usuario resultantes:
+   *   1) tournament.admins(roles: [...]) → [User]
+   *   2) tournament.participants(isAdmin: true) → participantes marcados admin
+   *
+   * Además, si la vista admin-only responde (owner o admins no vacíos) y el
+   * usuario actual aparece en la lista — o es el owner — se marca isAdmin=true.
    */
   public function getTournamentAdminInfo(User $user, string $slug): array
   {
     $normalized = ltrim(preg_replace('/^tournament\//', '', $slug) ?? '', '/');
-
-    $query = <<<'GQL'
-      query TournamentAdminsViaUser($slug: String!) {
-        tournament(slug: $slug) {
-        owner { id }
-        admins { id }
-        }
-      }
-      GQL;
-
     $slugsToTry = array_values(array_unique(array_filter([$normalized, $slug])));
+
     $ownerId = null;
     $adminIds = [];
-    $isAdminFlag = false;
+    $adminsFromRoles = [];
+    $currentUserId = (string) ($user->startgg_user_id ?? '');
 
     foreach ($slugsToTry as $slugToUse) {
-      $data = $this->query($user, $query, ['slug' => $slugToUse]);
-      $ownerId = data_get($data, 'tournament.owner.id');
-      $admins = data_get($data, 'tournament.admins', []);
-      $adminIds = collect($admins)
-        ->map(fn($admin) => (string) data_get($admin, 'id'))
-        ->filter()
-        ->values()
-        ->all();
+      try {
+        $combinedQuery = <<<'GQL'
+          query TournamentAdminInfo($slug: String!, $roles: [String], $page: Int!, $perPage: Int!) {
+            tournament(slug: $slug) {
+              owner { id }
+              admins(roles: $roles) { id slug }
+              participants(query: {page: $page, perPage: $perPage}, isAdmin: true) {
+                nodes { user { id } }
+              }
+            }
+          }
+          GQL;
 
-      Log::info('start.gg user admin lookup', [
-        'slug' => $slugToUse,
-        'owner_id' => $ownerId,
-        'admin_count' => count($adminIds),
-        'admins_sample' => array_slice($adminIds, 0, 3),
-        'user_id' => $user->id,
-        'is_admin_flag' => $isAdminFlag,
-      ]);
+        $data = $this->query($user, $combinedQuery, [
+          'slug' => $slugToUse,
+          'roles' => self::TOURNAMENT_ADMIN_ROLES,
+          'page' => 1,
+          'perPage' => 100,
+        ]);
 
-      // Salir si obtuvimos datos
-      if ($ownerId || !empty($adminIds) || $isAdminFlag) {
+        $ownerId = data_get($data, 'tournament.owner.id') ?? $ownerId;
+        $rolesIds = collect(data_get($data, 'tournament.admins', []))
+          ->map(fn ($admin) => (string) data_get($admin, 'id'))
+          ->filter()
+          ->all();
+        $adminsFromRoles = array_merge($adminsFromRoles, $rolesIds);
+        $adminIds = array_merge($adminIds, $rolesIds);
+        $adminIds = array_merge($adminIds, collect(data_get($data, 'tournament.participants.nodes', []))
+          ->map(fn ($node) => (string) data_get($node, 'user.id'))
+          ->filter()
+          ->all());
+      } catch (\Throwable $e) {
+        Log::info('start.gg combined admin lookup failed, falling back', [
+          'slug' => $slugToUse,
+          'user_id' => $user->id,
+          'error' => $e->getMessage(),
+        ]);
+
+        try {
+          $adminsQuery = <<<'GQL'
+            query TournamentAdminsViaUser($slug: String!, $roles: [String]) {
+              tournament(slug: $slug) {
+                owner { id }
+                admins(roles: $roles) { id slug }
+              }
+            }
+            GQL;
+
+          $data = $this->query($user, $adminsQuery, [
+            'slug' => $slugToUse,
+            'roles' => self::TOURNAMENT_ADMIN_ROLES,
+          ]);
+
+          $ownerId = data_get($data, 'tournament.owner.id') ?? $ownerId;
+          $rolesIds = collect(data_get($data, 'tournament.admins', []))
+            ->map(fn ($admin) => (string) data_get($admin, 'id'))
+            ->filter()
+            ->all();
+          $adminsFromRoles = array_merge($adminsFromRoles, $rolesIds);
+          $adminIds = array_merge($adminIds, $rolesIds);
+        } catch (\Throwable $e2) {
+          Log::info('start.gg user admins(roles) lookup failed (non-fatal)', [
+            'slug' => $slugToUse,
+            'user_id' => $user->id,
+            'error' => $e2->getMessage(),
+          ]);
+        }
+
+        try {
+          $participantsQuery = <<<'GQL'
+            query TournamentAdminParticipants($slug: String!, $page: Int!, $perPage: Int!) {
+              tournament(slug: $slug) {
+                owner { id }
+                participants(query: {page: $page, perPage: $perPage}, isAdmin: true) {
+                  nodes { user { id } }
+                }
+              }
+            }
+            GQL;
+
+          $data = $this->query($user, $participantsQuery, [
+            'slug' => $slugToUse,
+            'page' => 1,
+            'perPage' => 100,
+          ]);
+
+          $ownerId = data_get($data, 'tournament.owner.id') ?? $ownerId;
+          $adminIds = array_merge($adminIds, collect(data_get($data, 'tournament.participants.nodes', []))
+            ->map(fn ($node) => (string) data_get($node, 'user.id'))
+            ->filter()
+            ->all());
+        } catch (\Throwable $e2) {
+          Log::info('start.gg user participants(isAdmin) lookup failed (non-fatal)', [
+            'slug' => $slugToUse,
+            'user_id' => $user->id,
+            'error' => $e2->getMessage(),
+          ]);
+        }
+      }
+
+      if ($ownerId || !empty($adminIds)) {
         break;
       }
     }
 
+    $adminIds = array_values(array_unique($adminIds));
+    $adminsFromRoles = array_values(array_unique($adminsFromRoles));
+
+    $isAdmin = self::sameStartggUserId($ownerId, $currentUserId)
+      || collect($adminIds)->contains(fn ($id) => self::sameStartggUserId($id, $currentUserId));
+
+    Log::info('start.gg user admin lookup', [
+      'slug' => $slug,
+      'owner_id' => $ownerId,
+      'admin_count' => count($adminIds),
+      'admins_from_roles_count' => count($adminsFromRoles),
+      'admins_sample' => array_slice($adminIds, 0, 5),
+      'is_admin' => $isAdmin,
+      'user_id' => $user->id,
+    ]);
+
     return [
       'ownerId' => $ownerId,
       'adminIds' => $adminIds,
-      'isAdmin' => $isAdminFlag ?? false,
+      'isAdmin' => $isAdmin,
     ];
   }
 
@@ -232,7 +387,6 @@ class StartggClient
                   state
                   videogame {
                     id
-                    name
                   }
                 }
               }
@@ -324,10 +478,6 @@ class StartggClient
             name
             slug
             startAt
-            videogame {
-              id
-              name
-            }
             tournament {
               id
               name
@@ -352,13 +502,11 @@ class StartggClient
 
     $tournamentId = data_get($event, 'tournament.id');
     $tournamentOwner = data_get($event, 'tournament.owner.id');
-    $userId = (int) $user->startgg_user_id;
+    $userId = (string) $user->startgg_user_id;
 
     // Solo el owner del torneo se considera admin aquí. Los admins delegados
-    // se verifican en EventController::adminCheck (PAT de app + tournament.admins),
-    // que es la fuente fiable. Antes se consideraba admin a cualquier usuario
-    // inscrito en el torneo, lo que mostraba "Iniciar Set" a jugadores sin permisos.
-    $isAdmin = $tournamentOwner == $userId;
+    // se verifican en EventController::adminCheck / ChecksEventAdmin.
+    $isAdmin = self::sameStartggUserId($tournamentOwner, $userId);
     $isAdminEvent = $isAdmin;
 
     Log::info('Event admin check', [
@@ -383,47 +531,49 @@ class StartggClient
   }
 
   /**
-   * Obtener sets de un evento
+   * Obtener sets de un evento.
+   * Forma oficial: event.sets + SetFilters (no event.phases.sets ni participants.user).
+   * https://developer.start.gg/docs/examples/queries/sets-in-event
    */
   public function getEventSets(User $user, $eventId, array $filters = []): array
   {
-    $query = <<<'GQL'
-        query EventSets($eventId: ID!, $page: Int, $perPage: Int, $filters: SetFilters) {
-          event(id: $eventId) {
+    $mine = !empty($filters['mine']);
+    $userEntrantSelection = $mine
+      ? "userEntrant {\n              id\n            }"
+      : '';
+
+    $query = <<<GQL
+        query EventSets(\$eventId: ID!, \$page: Int!, \$perPage: Int!, \$filters: SetFilters) {
+          event(id: \$eventId) {
             id
             name
-            phases {
-              id
-              name
-              sets(
-                page: $page
-                perPage: $perPage
-                sortType: STANDARD
-                filters: $filters
-              ) {
-                pageInfo {
-                  total
-                  totalPages
-                }
-                nodes {
+            {$userEntrantSelection}
+            sets(
+              page: \$page
+              perPage: \$perPage
+              sortType: STANDARD
+              filters: \$filters
+            ) {
+              pageInfo {
+                totalPages
+              }
+              nodes {
+                id
+                fullRoundText
+                round
+                state
+                phaseGroup {
                   id
-                  fullRoundText
-                  round
-                  identifier
-                  state
-                  slots {
+                  displayIdentifier
+                  phase {
                     id
-                    entrant {
-                      id
-                      name
-                      participants {
-                        id
-                        user {
-                          id
-                          name
-                        }
-                      }
-                    }
+                    name
+                  }
+                }
+                slots {
+                  entrant {
+                    id
+                    name
                   }
                 }
               }
@@ -432,39 +582,58 @@ class StartggClient
         }
         GQL;
 
-    $data = $this->query($user, $query, [
-      'eventId' => $eventId,
-      'page' => 1,
-      'perPage' => 50,
-      'filters' => [
-        // Incluir solo sets no empezados y en progreso (excluir completados)
-        'state' => [1, 2], // 1=not_started, 2=in_progress
-      ],
-    ]);
+    $setFilters = [
+      'state' => [1, 2],
+      'hideEmpty' => true,
+    ];
 
-    $phases = data_get($data, 'event.phases', []);
-    $eventName = data_get($data, 'event.name', 'Unknown Event');
-
-    // Combinar sets de todas las phases
+    $perPage = 100;
+    $page = 1;
     $allSets = [];
-    foreach ($phases as $phase) {
-      $phaseSets = data_get($phase, 'sets.nodes', []);
-      $allSets = array_merge($allSets, $phaseSets);
+    $totalPages = 1;
+    $eventName = 'Unknown Event';
+    $userEntrantId = null;
+
+    do {
+      $data = $this->query($user, $query, [
+        'eventId' => $eventId,
+        'page' => $page,
+        'perPage' => $perPage,
+        'filters' => $setFilters,
+      ]);
+
+      if ($page === 1) {
+        $eventName = data_get($data, 'event.name', 'Unknown Event');
+        $userEntrantId = data_get($data, 'event.userEntrant.id');
+      }
+
+      $nodes = data_get($data, 'event.sets.nodes', []) ?: [];
+      $allSets = array_merge($allSets, $nodes);
+      $totalPages = (int) (data_get($data, 'event.sets.pageInfo.totalPages') ?: 1);
+      $page++;
+    } while ($page <= $totalPages && $page <= 50);
+
+    $phaseIds = [];
+    foreach ($allSets as $set) {
+      $pid = data_get($set, 'phaseGroup.phase.id');
+      if ($pid) {
+        $phaseIds[(string) $pid] = true;
+      }
     }
+    $hasMultiplePhases = count($phaseIds) > 1;
 
     Log::info('Raw sets from start.gg', [
       'event_id' => $eventId,
-      'total_phases' => count($phases),
+      'total_phases' => count($phaseIds),
       'total_sets' => count($allSets),
       'first_set' => $allSets[0] ?? null,
     ]);
 
-    $mapped = array_map(function ($set) use ($eventId, $eventName) {
+    $mapped = array_map(function ($set) use ($eventId, $eventName, $hasMultiplePhases) {
       $slots = $set['slots'] ?? [];
       $p1 = $slots[0] ?? null;
       $p2 = $slots[1] ?? null;
 
-      // Mapear estados de start.gg a nuestros estados
       $status = match ($set['state'] ?? 0) {
         1 => 'not_started',
         2 => 'in_progress',
@@ -472,31 +641,45 @@ class StartggClient
         default => 'not_started',
       };
 
-      // Obtener user ID del primer participante del entrant
-      $p1UserId = data_get($p1, 'entrant.participants.0.user.id');
-      $p2UserId = data_get($p2, 'entrant.participants.0.user.id');
-
-      // Obtener nombres, null si no hay entrant
       $p1Name = data_get($p1, 'entrant.name');
       $p2Name = data_get($p2, 'entrant.name');
+
+      $poolId = data_get($set, 'phaseGroup.id');
+      $poolIdentifier = data_get($set, 'phaseGroup.displayIdentifier');
+      $phaseId = data_get($set, 'phaseGroup.phase.id');
+      $phaseName = data_get($set, 'phaseGroup.phase.name');
+
+      $poolLabel = null;
+      if ($poolIdentifier) {
+        $poolLabel = $hasMultiplePhases && $phaseName
+          ? "{$phaseName} · Pool {$poolIdentifier}"
+          : "Pool {$poolIdentifier}";
+      } elseif ($phaseName && $hasMultiplePhases) {
+        $poolLabel = $phaseName;
+      }
 
       return [
         'id' => $set['id'],
         'eventId' => $eventId,
         'eventName' => $eventName,
         'round' => $set['fullRoundText'] ?? 'Round ' . $set['round'],
-        'bestOf' => 3, // TODO: obtener bestOf real del set
+        'bestOf' => 3,
         'p1' => [
-          'userId' => $p1UserId,
+          'userId' => null,
           'entrantId' => data_get($p1, 'entrant.id'),
           'name' => $p1Name ?? 'TBD',
         ],
         'p2' => [
-          'userId' => $p2UserId,
+          'userId' => null,
           'entrantId' => data_get($p2, 'entrant.id'),
           'name' => $p2Name ?? 'TBD',
         ],
         'status' => $status,
+        'phaseId' => $phaseId,
+        'phaseName' => $phaseName,
+        'poolId' => $poolId,
+        'poolIdentifier' => $poolIdentifier,
+        'poolLabel' => $poolLabel,
       ];
     }, $allSets);
 
@@ -506,6 +689,13 @@ class StartggClient
       $hasP2 = $set['p2']['name'] !== 'TBD' && !empty($set['p2']['name']);
       return $hasP1 && $hasP2;
     }));
+
+    if (!empty($filters['mine']) && $userEntrantId) {
+      $filtered = array_values(array_filter($filtered, function ($set) use ($userEntrantId) {
+        return (string) ($set['p1']['entrantId'] ?? '') === (string) $userEntrantId
+          || (string) ($set['p2']['entrantId'] ?? '') === (string) $userEntrantId;
+      }));
+    }
 
     // Contar sets filtrados por ronda
     $setsByRound = collect($filtered)->groupBy('round')->map->count();
@@ -522,6 +712,145 @@ class StartggClient
     ]);
 
     return $filtered;
+  }
+
+  /**
+   * Mapa slug → ID de personaje de start.gg (Smash Ultimate).
+   * Fuente única de verdad al reportar games a start.gg.
+   */
+  private function characterMap(): array
+  {
+    return [
+      'bayonetta' => 1271,
+      'bowser_jr' => 1272,
+      'bowser' => 1273,
+      'captain_falcon' => 1274,
+      'cloud' => 1275,
+      'corrin' => 1276,
+      'daisy' => 1277,
+      'dark_pit' => 1278,
+      'diddy_kong' => 1279,
+      'donkey_kong' => 1280,
+      'dr_mario' => 1282,
+      'duck_hunt' => 1283,
+      'falco' => 1285,
+      'fox' => 1286,
+      'ganondorf' => 1287,
+      'greninja' => 1289,
+      'ice_climbers' => 1290,
+      'ike' => 1291,
+      'inkling' => 1292,
+      'jigglypuff' => 1293,
+      'king_dedede' => 1294,
+      'kirby' => 1295,
+      'link' => 1296,
+      'little_mac' => 1297,
+      'lucario' => 1298,
+      'lucas' => 1299,
+      'lucina' => 1300,
+      'luigi' => 1301,
+      'mario' => 1302,
+      'marth' => 1304,
+      'mega_man' => 1305,
+      'meta_knight' => 1307,
+      'mewtwo' => 1310,
+      'mii_brawler' => 1311,
+      'ness' => 1313,
+      'olimar' => 1314,
+      'pac_man' => 1315,
+      'palutena' => 1316,
+      'peach' => 1317,
+      'pichu' => 1318,
+      'pikachu' => 1319,
+      'pit' => 1320,
+      'pokemon_trainer' => 1321,
+      'ridley' => 1322,
+      'rob' => 1323,
+      'robin' => 1324,
+      'rosalina_and_luma' => 1325,
+      'roy' => 1326,
+      'ryu' => 1327,
+      'samus' => 1328,
+      'sheik' => 1329,
+      'shulk' => 1330,
+      'snake' => 1331,
+      'sonic' => 1332,
+      'toon_link' => 1333,
+      'villager' => 1334,
+      'wario' => 1335,
+      'wii_fit_trainer' => 1336,
+      'wolf' => 1337,
+      'yoshi' => 1338,
+      'young_link' => 1339,
+      'zelda' => 1340,
+      'zero_suit_samus' => 1341,
+      'mr_game_and_watch' => 1405,
+      'incineroar' => 1406,
+      'gaogaen' => 1406,
+      'king_k_rool' => 1407,
+      'dark_samus' => 1408,
+      'chrom' => 1409,
+      'ken' => 1410,
+      'simon' => 1411,
+      'richter' => 1412,
+      'isabelle' => 1413,
+      'mii_swordfighter' => 1414,
+      'mii_gunner' => 1415,
+      'piranha_plant' => 1441,
+      'packun_flower' => 1441,
+      'joker' => 1453,
+      'hero' => 1526,
+      'dq_hero' => 1526,
+      'banjo_kazooie' => 1530,
+      'banjo_and_kazooie' => 1530,
+      'terry' => 1532,
+      'byleth' => 1539,
+      'min_min' => 1747,
+      'minmin' => 1747,
+      'steve' => 1766,
+      'sephiroth' => 1777,
+      'pyra_mythra' => 1795,
+      'pyra_and_mythra' => 1795,
+      'homura' => 1795,
+      'kazuya' => 1846,
+      'sora' => 1897,
+      // aliases used in frontend
+      'mii_fighter' => 1311,
+    ];
+  }
+
+  /**
+   * ID de personaje de start.gg → slug que coincide con el nombre del archivo de
+   * icono del frontend (frontend/public/stock_icons/<slug>.png).
+   */
+  private function characterSlugFromStartggId($id): ?string
+  {
+    if ($id === null || $id === '') {
+      return null;
+    }
+    $id = (int) $id;
+
+    // Overrides para ids con varios slugs, eligiendo el que tiene icono en el front.
+    $iconOverrides = [
+      1311 => 'mii_brawler',
+      1406 => 'incineroar',
+      1441 => 'piranha_plant',
+      1526 => 'hero',
+      1530 => 'banjo_and_kazooie',
+      1747 => 'minmin',
+      1795 => 'pyra_and_mythra',
+    ];
+    if (isset($iconOverrides[$id])) {
+      return $iconOverrides[$id];
+    }
+
+    // Para el resto, el primer slug encontrado coincide con el icono.
+    foreach ($this->characterMap() as $slug => $charId) {
+      if ((int) $charId === $id) {
+        return $slug;
+      }
+    }
+    return null;
   }
 
   /**
@@ -737,103 +1066,7 @@ class StartggClient
       'Kalos Pokemon League' => 348, // start.gg usa "Kalos Pokémon League"
     ];
 
-    $characterMap = [
-      'bayonetta' => 1271,
-      'bowser_jr' => 1272,
-      'bowser' => 1273,
-      'captain_falcon' => 1274,
-      'cloud' => 1275,
-      'corrin' => 1276,
-      'daisy' => 1277,
-      'dark_pit' => 1278,
-      'diddy_kong' => 1279,
-      'donkey_kong' => 1280,
-      'dr_mario' => 1282,
-      'duck_hunt' => 1283,
-      'falco' => 1285,
-      'fox' => 1286,
-      'ganondorf' => 1287,
-      'greninja' => 1289,
-      'ice_climbers' => 1290,
-      'ike' => 1291,
-      'inkling' => 1292,
-      'jigglypuff' => 1293,
-      'king_dedede' => 1294,
-      'kirby' => 1295,
-      'link' => 1296,
-      'little_mac' => 1297,
-      'lucario' => 1298,
-      'lucas' => 1299,
-      'lucina' => 1300,
-      'luigi' => 1301,
-      'mario' => 1302,
-      'marth' => 1304,
-      'mega_man' => 1305,
-      'meta_knight' => 1307,
-      'mewtwo' => 1310,
-      'mii_brawler' => 1311,
-      'ness' => 1313,
-      'olimar' => 1314,
-      'pac_man' => 1315,
-      'palutena' => 1316,
-      'peach' => 1317,
-      'pichu' => 1318,
-      'pikachu' => 1319,
-      'pit' => 1320,
-      'pokemon_trainer' => 1321,
-      'ridley' => 1322,
-      'rob' => 1323,
-      'robin' => 1324,
-      'rosalina_and_luma' => 1325,
-      'roy' => 1326,
-      'ryu' => 1327,
-      'samus' => 1328,
-      'sheik' => 1329,
-      'shulk' => 1330,
-      'snake' => 1331,
-      'sonic' => 1332,
-      'toon_link' => 1333,
-      'villager' => 1334,
-      'wario' => 1335,
-      'wii_fit_trainer' => 1336,
-      'wolf' => 1337,
-      'yoshi' => 1338,
-      'young_link' => 1339,
-      'zelda' => 1340,
-      'zero_suit_samus' => 1341,
-      'mr_game_and_watch' => 1405,
-      'incineroar' => 1406,
-      'gaogaen' => 1406,
-      'king_k_rool' => 1407,
-      'dark_samus' => 1408,
-      'chrom' => 1409,
-      'ken' => 1410,
-      'simon' => 1411,
-      'richter' => 1412,
-      'isabelle' => 1413,
-      'mii_swordfighter' => 1414,
-      'mii_gunner' => 1415,
-      'piranha_plant' => 1441,
-      'packun_flower' => 1441,
-      'joker' => 1453,
-      'hero' => 1526,
-      'dq_hero' => 1526,
-      'banjo_kazooie' => 1530,
-      'banjo_and_kazooie' => 1530,
-      'terry' => 1532,
-      'byleth' => 1539,
-      'min_min' => 1747,
-      'minmin' => 1747,
-      'steve' => 1766,
-      'sephiroth' => 1777,
-      'pyra_mythra' => 1795,
-      'pyra_and_mythra' => 1795,
-      'homura' => 1795,
-      'kazuya' => 1846,
-      'sora' => 1897,
-      // aliases used in frontend
-      'mii_fighter' => 1311,
-    ];
+    $characterMap = $this->characterMap();
 
     $mapStageId = function (?string $stageName) use ($stageMap) {
       return $stageName && array_key_exists($stageName, $stageMap)

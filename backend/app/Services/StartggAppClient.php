@@ -24,16 +24,19 @@ class StartggAppClient
         }
         $normalized = $this->normalizeSlug($slug);
 
+        // IMPORTANTE: el campo `admins` devuelve [User], por lo que el `id` ya es el
+        // user id (NO existe un subcampo `user` en User). Además hay que pasar el
+        // argumento `roles` o start.gg no devuelve Managers/Bracket Managers/Reporters.
         $query = <<<'GQL'
-        query TournamentAdmins($slug: String!) {
+        query TournamentAdmins($slug: String!, $roles: [String]) {
           tournament(slug: $slug) {
             id
             name
             owner { id }
-            admins {
+            admins(roles: $roles) {
               id
               name
-              user { id slug }
+              slug
             }
           }
         }
@@ -65,6 +68,7 @@ class StartggAppClient
                     'query' => $query,
                     'variables' => [
                         'slug' => $slugToUse,
+                        'roles' => \App\Services\StartggClient::TOURNAMENT_ADMIN_ROLES,
                     ],
                 ]);
 
@@ -124,9 +128,10 @@ class StartggAppClient
                 }
             }
 
-            // Build user IDs from admins list when available
+            // `admins` devuelve [User]: el id del nodo ES el user id. Mantenemos
+            // el fallback a `user.id` por si la lista vino de participants(isAdmin).
             $adminUserIds = collect($adminsList)
-                ->map(fn ($admin) => data_get($admin, 'user.id'))
+                ->map(fn ($admin) => data_get($admin, 'user.id') ?? data_get($admin, 'id'))
                 ->filter()
                 ->map(fn ($id) => (string) $id)
                 ->values()

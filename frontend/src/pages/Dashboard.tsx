@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Calendar, Swords, Play, ShieldCheck, RefreshCw, ChevronRight } from 'lucide-react';
@@ -22,19 +22,13 @@ export default function Dashboard() {
 
   const activeEvents = events?.filter((event) => event.status === 'active') || [];
   const upcomingEvents = events?.filter((event) => event.status === 'upcoming') || [];
-  const adminEvents = activeEvents.filter((event) => event.isAdmin);
 
   const isAdmin = user?.role === 'admin';
-  const adminEventId = useMemo(() => {
-    const fromStorage = sessionStorage.getItem('admin_event_id');
-    if (fromStorage) return fromStorage;
-    return adminEvents[0]?.id ? String(adminEvents[0].id) : '';
-  }, [adminEvents]);
 
   const { data: pendingReports, isLoading: pendingReportsLoading } = useQuery({
-    queryKey: ['adminPendingReports', adminEventId],
-    queryFn: () => adminApi.getReports({ status: 'pending', eventId: adminEventId }),
-    enabled: !!isAdmin && !!adminEventId,
+    queryKey: ['adminPendingReports'],
+    queryFn: () => adminApi.getReports({ status: 'pending' }),
+    enabled: !!isAdmin,
   });
 
   const handleRefresh = async () => {
@@ -79,17 +73,12 @@ export default function Dashboard() {
               <ShieldCheck className="w-4 h-4 text-primary" />
               Reportes pendientes
             </h2>
-            {!adminEventId ? (
-              <div className="gaming-card p-6 text-center">
-                <Swords className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">Selecciona un evento admin para ver reportes</p>
-              </div>
-            ) : pendingReportsLoading ? (
+            {pendingReportsLoading ? (
               <Skeleton className="h-24 rounded-xl" />
             ) : !pendingReports || pendingReports.length === 0 ? (
               <div className="gaming-card p-6 text-center">
                 <Swords className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">Sin reportes pendientes</p>
+                <p className="text-sm text-muted-foreground">Los sets a validar aparecerán aquí</p>
               </div>
             ) : (
               <div className="gaming-card p-4 space-y-3">
@@ -98,10 +87,7 @@ export default function Dashboard() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => {
-                      sessionStorage.setItem('admin_event_id', adminEventId);
-                      navigate(`/admin/reports?eventId=${adminEventId}`);
-                    }}
+                    onClick={() => navigate('/admin/reports')}
                     className="text-primary text-xs gap-1"
                   >
                     Ver todos <ChevronRight className="w-3 h-3" />
@@ -110,10 +96,7 @@ export default function Dashboard() {
                 {pendingReports.slice(0, 2).map((report) => (
                   <button
                     key={report.id}
-                    onClick={() => {
-                      if (adminEventId) sessionStorage.setItem('admin_event_id', adminEventId);
-                      navigate(`/admin/reports/${report.id}${adminEventId ? `?eventId=${adminEventId}` : ''}`);
-                    }}
+                    onClick={() => navigate(`/admin/reports/${report.id}`)}
                     className="w-full text-left p-3 rounded-lg bg-muted/50 border border-border/50 hover:border-primary/50 transition-all active:scale-[0.98]"
                   >
                     <p className="text-sm font-medium truncate">{report.round}</p>

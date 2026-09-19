@@ -12,6 +12,18 @@ export default defineConfig(({ mode }) => {
   server: {
     host: "::",
     port: 8080,
+    proxy: {
+      // Mismo origen que Vite: el navegador no hace OPTIONS/CORS.
+      // php artisan serve es un solo hilo; el preflight duplicaba cada petición.
+      "/api": {
+        target: "http://127.0.0.1:8000",
+        changeOrigin: true,
+      },
+      "/auth": {
+        target: "http://127.0.0.1:8000",
+        changeOrigin: true,
+      },
+    },
   },
   test: {
     environment: 'jsdom',

@@ -17,9 +17,12 @@ export default function AuthCallback() {
     }
 
     if (token) {
-      // El token será capturado por useAuth hook a través de useSearchParams
-      // Redirigir al dashboard
-      navigate('/dashboard');
+      // Guardar aquí antes de navegar: si /dashboard monta antes que useAuth,
+      // ProtectedRoute vería sesión vacía y redirigiría a /login.
+      sessionStorage.setItem('auth_token', token);
+      const returnTo = sessionStorage.getItem('auth_return_to') || '/dashboard';
+      sessionStorage.removeItem('auth_return_to');
+      navigate(returnTo.startsWith('/') ? returnTo : '/dashboard', { replace: true });
     } else {
       navigate('/login?error=no_token');
     }

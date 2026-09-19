@@ -37,6 +37,11 @@ export interface SetSummary {
   status: 'not_started' | 'in_progress' | 'reported' | 'approved' | 'rejected' | 'completed';
   isAdmin?: boolean;
   reportStatus?: 'pending' | 'approved' | 'rejected';
+  phaseId?: ID | null;
+  phaseName?: string | null;
+  poolId?: ID | null;
+  poolIdentifier?: string | null;
+  poolLabel?: string | null;
 }
 
 export interface ExistingReport {
