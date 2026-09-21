@@ -2,6 +2,8 @@
 
 namespace Tests\Unit;
 
+use App\Models\Game;
+use App\Models\Report;
 use App\Models\User;
 use App\Services\StartggAuth;
 use App\Services\StartggClient;
@@ -378,9 +380,94 @@ class StartggClientTest extends TestCase
         $this->assertSame('not_started', $sets[1]['status']);
     }
 
-    public function test_mark_set_in_progress_throws_on_empty_result(): void
+    public function test_report_set_maps_mii_fighters_to_their_startgg_character_ids(): void
     {
         $auth = Mockery::mock(StartggAuth::class);
+        $client = Mockery::mock(StartggClient::class, [$auth])->makePartial();
+
+        $captured = [];
+        $client->shouldReceive('query')
+            ->once()
+            ->andReturnUsing(function ($user, $query, $variables) use (&$captured) {
+                $captured = $variables;
+
+                return ['reportBracketSet' => ['id' => 'set-1', 'state' => 3]];
+            });
+
+        $user = User::factory()->create();
+        $report = $this->createReportWithGame($user, 'mii_swordfighter', 'mii_gunner');
+
+        $client->reportSet($user, 'set-1', '111', $report);
+
+        $selections = $captured['gameData'][0]['selections'];
+
+        // IDs verificados contra el catálogo de start.gg (videogame 1386).
+        $this->assertSame([
+            ['entrantId' => 111, 'characterId' => 1414],
+            ['entrantId' => 222, 'characterId' => 1415],
+        ], $selections);
+    }
+
+    public function test_report_set_maps_legacy_mii_fighter_slug_to_brawler(): void
+    {
+        $auth = Mockery::mock(StartggAuth::class);
+        $client = Mockery::mock(StartggClient::class, [$auth])->makePartial();
+
+        $captured = [];
+        $client->shouldReceive('query')
+            ->once()
+            ->andReturnUsing(function ($user, $query, $variables) use (&$captured) {
+                $captured = $variables;
+
+                return ['reportBracketSet' => ['id' => 'set-1', 'state' => 3]];
+            });
+
+        $user = User::factory()->create();
+        $report = $this->createReportWithGame($user, 'mii_fighter', 'mario');
+
+        $client->reportSet($user, 'set-1', '111', $report);
+
+        $this->assertSame(1311, $captured['gameData'][0]['selections'][0]['characterId']);
+    }
+
+    /**
+     * reportSet relee los games desde la BD (no usa la relación cargada),
+     * así que el reporte y su game deben existir de verdad.
+     */
+    private function createReportWithGame(User $user, string $characterP1, string $characterP2): Report
+    {
+        $report = Report::create([
+            'user_id' => $user->id,
+            'event_id' => 10,
+            'event_name' => 'Event 10',
+            'set_id' => 'set-1',
+            'round' => 'Winners R1',
+            'best_of' => 3,
+            'p1_entrant_id' => '111',
+            'p1_name' => 'Player 1',
+            'p2_entrant_id' => '222',
+            'p2_name' => 'Player 2',
+            'score_p1' => 1,
+            'score_p2' => 0,
+            'status' => 'pending',
+        ]);
+
+        Game::create([
+            'report_id' => $report->id,
+            'game_index' => 1,
+            'stage' => 'Battlefield',
+            'winner' => 'p1',
+            'stocks_p1' => 2,
+            'stocks_p2' => 0,
+            'character_p1' => $characterP1,
+            'character_p2' => $characterP2,
+        ]);
+
+        return $report;
+    }
+
+    public function test_mark_set_in_progress_throws_on_empty_result(): void
+    {        $auth = Mockery::mock(StartggAuth::class);
         $client = Mockery::mock(StartggClient::class, [$auth])->makePartial();
 
         $client->shouldReceive('query')->andReturn(['markSetInProgress' => null]);

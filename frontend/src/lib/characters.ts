@@ -55,6 +55,8 @@ export const CHARACTERS = [
   'little_mac',
   'greninja',
   'mii_brawler',
+  'mii_swordfighter',
+  'mii_gunner',
   'palutena',
   'pac_man',
   'robin',
