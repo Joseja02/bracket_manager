@@ -470,9 +470,17 @@ class StartggClient
    */
   public function getEvent(User $user, $eventId): array
   {
+    // `userEntrant` sin argumento depende de que start.gg reconozca una sesión
+    // de usuario; con tokens que no son de sesión (p. ej. el PAT del dev-login)
+    // devuelve null y el frontend no puede saber si el usuario juega el set.
+    // Pasamos el userId explícito para que la detección sea fiable.
+    $entrantUserId = $user->startgg_user_id !== null && $user->startgg_user_id !== ''
+      ? (string) $user->startgg_user_id
+      : null;
+
     // Primero obtenemos el torneo del evento para verificar permisos
     $query = <<<'GQL'
-        query EventDetail($id: ID!) {
+        query EventDetail($id: ID!, $userId: ID) {
           event(id: $id) {
             id
             name
@@ -486,14 +494,14 @@ class StartggClient
                 id
               }
             }
-            userEntrant {
+            userEntrant(userId: $userId) {
               id
             }
           }
         }
         GQL;
 
-    $data = $this->query($user, $query, ['id' => $eventId]);
+    $data = $this->query($user, $query, ['id' => $eventId, 'userId' => $entrantUserId]);
     $event = data_get($data, 'event');
 
     if (!$event) {
@@ -538,12 +546,17 @@ class StartggClient
   public function getEventSets(User $user, $eventId, array $filters = []): array
   {
     $mine = !empty($filters['mine']);
+    // Igual que en getEvent: `userEntrant` necesita el userId explícito.
+    $entrantUserId = $user->startgg_user_id !== null && $user->startgg_user_id !== ''
+      ? (string) $user->startgg_user_id
+      : null;
     $userEntrantSelection = $mine
-      ? "userEntrant {\n              id\n            }"
+      ? "userEntrant(userId: \$userId) {\n              id\n            }"
       : '';
+    $userEntrantVariable = $mine ? ', $userId: ID' : '';
 
     $query = <<<GQL
-        query EventSets(\$eventId: ID!, \$page: Int!, \$perPage: Int!, \$filters: SetFilters) {
+        query EventSets(\$eventId: ID!, \$page: Int!, \$perPage: Int!, \$filters: SetFilters{$userEntrantVariable}) {
           event(id: \$eventId) {
             id
             name
@@ -600,6 +613,7 @@ class StartggClient
         'page' => $page,
         'perPage' => $perPage,
         'filters' => $setFilters,
+        'userId' => $entrantUserId,
       ]);
 
       if ($page === 1) {

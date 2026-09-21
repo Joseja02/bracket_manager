@@ -100,6 +100,169 @@ class StartggClientTest extends TestCase
         $this->assertFalse(StartggClient::sameStartggUserId(null, '1'));
     }
 
+    public function test_get_event_asks_user_entrant_for_the_explicit_user_id(): void
+    {
+        $auth = Mockery::mock(StartggAuth::class);
+        $client = Mockery::mock(StartggClient::class, [$auth])->makePartial();
+
+        $captured = [];
+        $client->shouldReceive('query')
+            ->once()
+            ->andReturnUsing(function ($user, $query, $variables) use (&$captured) {
+                $captured = ['query' => $query, 'variables' => $variables];
+
+                return [
+                    'event' => [
+                        'id' => '1704834',
+                        'name' => 'Ultimate Singles',
+                        'startAt' => 1700000000,
+                        'tournament' => [
+                            'id' => '950936',
+                            'name' => 'Stranger Spins 39',
+                            'slug' => 'tournament/stranger-spins-39',
+                            'owner' => ['id' => '99'],
+                        ],
+                        'userEntrant' => ['id' => '24682069'],
+                    ],
+                ];
+            });
+
+        $user = User::factory()->create(['startgg_user_id' => '730250']);
+        $event = $client->getEvent($user, '1704834');
+
+        // start.gg no resuelve el usuario autenticado en `userEntrant` sin
+        // argumento (devuelve null), por eso el userId debe ir explícito.
+        $this->assertStringContainsString('userEntrant(userId: $userId)', $captured['query']);
+        $this->assertSame('730250', $captured['variables']['userId']);
+        $this->assertSame('1704834', $captured['variables']['id']);
+        $this->assertSame('24682069', $event['userEntrantId']);
+    }
+
+    public function test_get_event_without_startgg_user_id_sends_null_user_id(): void
+    {
+        $auth = Mockery::mock(StartggAuth::class);
+        $client = Mockery::mock(StartggClient::class, [$auth])->makePartial();
+
+        $captured = [];
+        $client->shouldReceive('query')
+            ->once()
+            ->andReturnUsing(function ($user, $query, $variables) use (&$captured) {
+                $captured = $variables;
+
+                return [
+                    'event' => [
+                        'id' => '1',
+                        'name' => 'Event',
+                        'startAt' => 1,
+                        'tournament' => ['id' => '1', 'name' => 'T', 'slug' => 'tournament/t', 'owner' => ['id' => '9']],
+                        'userEntrant' => null,
+                    ],
+                ];
+            });
+
+        $user = User::factory()->create(['startgg_user_id' => null]);
+        $event = $client->getEvent($user, '1');
+
+        $this->assertArrayHasKey('userId', $captured);
+        $this->assertNull($captured['userId']);
+        $this->assertNull($event['userEntrantId']);
+    }
+
+    public function test_get_event_sets_with_mine_uses_explicit_user_entrant(): void
+    {
+        $auth = Mockery::mock(StartggAuth::class);
+        $client = Mockery::mock(StartggClient::class, [$auth])->makePartial();
+
+        $captured = [];
+        $client->shouldReceive('query')
+            ->once()
+            ->andReturnUsing(function ($user, $query, $variables) use (&$captured) {
+                $captured = ['query' => $query, 'variables' => $variables];
+
+                return [
+                    'event' => [
+                        'name' => 'Test Event',
+                        'userEntrant' => ['id' => 'e1'],
+                        'sets' => [
+                            'pageInfo' => ['totalPages' => 1],
+                            'nodes' => [
+                                [
+                                    'id' => 'set-mine',
+                                    'fullRoundText' => 'Winners R1',
+                                    'round' => 1,
+                                    'state' => 2,
+                                    'slots' => [
+                                        ['entrant' => ['id' => 'e1', 'name' => 'Joseja']],
+                                        ['entrant' => ['id' => 'e2', 'name' => 'Rival']],
+                                    ],
+                                ],
+                                [
+                                    'id' => 'set-other',
+                                    'fullRoundText' => 'Winners R1',
+                                    'round' => 1,
+                                    'state' => 2,
+                                    'slots' => [
+                                        ['entrant' => ['id' => 'e3', 'name' => 'Otro']],
+                                        ['entrant' => ['id' => 'e4', 'name' => 'Rival 2']],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ];
+            });
+
+        $user = User::factory()->create(['startgg_user_id' => '730250']);
+        $sets = $client->getEventSets($user, 1704834, ['mine' => true]);
+
+        $this->assertStringContainsString('userEntrant(userId: $userId)', $captured['query']);
+        $this->assertStringContainsString('$userId: ID', $captured['query']);
+        $this->assertSame('730250', $captured['variables']['userId']);
+        $this->assertCount(1, $sets);
+        $this->assertSame('set-mine', $sets[0]['id']);
+    }
+
+    public function test_get_event_sets_without_mine_does_not_query_user_entrant(): void
+    {
+        $auth = Mockery::mock(StartggAuth::class);
+        $client = Mockery::mock(StartggClient::class, [$auth])->makePartial();
+
+        $captured = [];
+        $client->shouldReceive('query')
+            ->once()
+            ->andReturnUsing(function ($user, $query, $variables) use (&$captured) {
+                $captured = $query;
+
+                return [
+                    'event' => [
+                        'name' => 'Test Event',
+                        'sets' => [
+                            'pageInfo' => ['totalPages' => 1],
+                            'nodes' => [
+                                [
+                                    'id' => 'set-1',
+                                    'fullRoundText' => 'Winners R1',
+                                    'round' => 1,
+                                    'state' => 2,
+                                    'slots' => [
+                                        ['entrant' => ['id' => 'e1', 'name' => 'P1']],
+                                        ['entrant' => ['id' => 'e2', 'name' => 'P2']],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ];
+            });
+
+        $user = User::factory()->create(['startgg_user_id' => '730250']);
+        $client->getEventSets($user, 1704834);
+
+        // Sin `mine` no se añade el campo ni la variable (evita coste extra).
+        $this->assertStringNotContainsString('userEntrant', $captured);
+        $this->assertStringNotContainsString('$userId', $captured);
+    }
+
     public function test_get_event_sets_filters_and_maps_results(): void
     {
         $auth = Mockery::mock(StartggAuth::class);
